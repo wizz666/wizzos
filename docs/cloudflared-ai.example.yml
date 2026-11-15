@@ -1,0 +1,15 @@
+# Exempel: gör BARA WizzOS AI-koppling nåbar från internet (för Claude/ChatGPT
+# på webben och i mobilen + Godkänn-knapparna), via en Cloudflare-tunnel.
+# Panelen, filerna och API:t förblir privata. Byt ut värdena i <...>.
+tunnel: <tunnel-id>
+credentials-file: /etc/cloudflared/<tunnel-id>.json
+no-autoupdate: true
+
+ingress:
+  - hostname: <wizzos-ai.din-domän.se>
+    path: ^/(mcp|oauth/(authorize|token|register)|\.well-known/(oauth-protected-resource|oauth-authorization-server|openid-configuration)(/mcp)?|approve/[A-Za-z0-9_-]{20,}(/(yes|no))?|static/logo-192\.png)$
+    service: http://<serverns-tailscale-ip>:8899
+    originRequest:
+      connectTimeout: 10s
+      httpHostHeader: <wizzos-ai.din-domän.se>
+  - service: http_status:404

@@ -1,0 +1,79 @@
+name: Release
+
+# Pusha en tagg som v2.0.1 för att publicera:
+#   - ghcr.io/wizz666/wizzos:2.0.1 och :latest (amd64 + arm64)
+#   - ghcr.io/wizz666/wizzos-proxy:2.0.1 och :latest
+#   - en GitHub-release med texten från CHANGELOG.md (WizzOS visar den under "Nytt i …")
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version från taggen
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          grep -q "__version__ = \"$VERSION\"" app/__init__.py || { echo "app/__init__.py har inte version $VERSION"; exit 1; }
+
+      - name: Kontroller
+        run: |
+          python3 -m py_compile app/*.py
+          for f in app/static/*.js; do node --check "$f"; done
+          bash -n install.sh
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/wizz666/wizzos:${{ env.VERSION }}
+            ghcr.io/wizz666/wizzos:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/wizz666/wizzos
+            org.opencontainers.image.description=WizzOS – en egen hemserver-panel med skyddsnät
+            org.opencontainers.image.licenses=AGPL-3.0-only
+            org.opencontainers.image.version=${{ env.VERSION }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: proxy
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/wizz666/wizzos-proxy:${{ env.VERSION }}
+            ghcr.io/wizz666/wizzos-proxy:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/wizz666/wizzos
+            org.opencontainers.image.description=WizzOS proxy (Caddy med Cloudflare-DNS)
+            org.opencontainers.image.licenses=AGPL-3.0-only
+            org.opencontainers.image.version=${{ env.VERSION }}
+
+      - name: Release-text från CHANGELOG.md
+        run: |
+          awk -v v="## $VERSION" '$0 ~ "^## " { p = ($0 == v || index($0, v" ") == 1) ; next } p' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "WizzOS $VERSION" > notes.md
+          cat notes.md
+
+      - name: GitHub-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --title "WizzOS $VERSION" --notes-file notes.md

@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python
+        run: |
+          pip install -q -r requirements.txt
+          python -m py_compile app/*.py
+          WIZZOS_DATA=/tmp/wzdata python -c "import app.main"
+      - name: JavaScript
+        run: for f in app/static/*.js; do node --check "$f"; done
+      - name: Installationsskriptet
+        run: bash -n install.sh
+      - name: Docker-bygge
+        run: docker build -q -t wizzos-ci .

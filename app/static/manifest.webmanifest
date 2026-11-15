@@ -1,0 +1,11 @@
+{
+  "name": "WizzOS",
+  "short_name": "WizzOS",
+  "description": "Din egen server – appar, backup och ångra-knapp.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d0f1a",
+  "theme_color": "#0d0f1a",
+  "icons": [{ "src": "/static/logo-192.png", "sizes": "192x192", "type": "image/png" }, { "src": "/static/logo.png", "sizes": "512x512", "type": "image/png" }]
+}

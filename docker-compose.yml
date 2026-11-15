@@ -1,0 +1,37 @@
+# WizzOS – startas av install.sh, som skriver .env (LISTEN_IP, TZ, WIZZOS_VERSION …).
+# Färdiga images från GitHub (ghcr.io). WizzOS uppdaterar sig själv genom att byta
+# WIZZOS_VERSION i .env – och backar automatiskt om den nya versionen inte startar.
+name: wizzos
+services:
+  wizzos:
+    image: ghcr.io/wizz666/wizzos:${WIZZOS_VERSION:-latest}
+    container_name: wizzos
+    restart: unless-stopped
+    ports:
+      # LISTEN_IP=0.0.0.0 hemma, 127.0.0.1 eller Tailscale-IP på en VPS.
+      - "${LISTEN_IP:-0.0.0.0}:${WIZZOS_PORT:-8899}:8899"
+    environment:
+      TZ: ${TZ:-Europe/Stockholm}
+      WIZZOS_BIND_IP: ${APPS_BIND_IP:-}
+      WIZZOS_LISTEN_IP: ${LISTEN_IP:-0.0.0.0}
+      WIZZOS_PORT: ${WIZZOS_PORT:-8899}
+      WIZZOS_VERSION: ${WIZZOS_VERSION:-latest}
+      WIZZOS_HOST_DIR: ${WIZZOS_HOST_DIR:-/opt/wizzos}
+      # Proxyn (Caddy) talar om att besökaren använde https.
+      FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Samma sökväg på värden och i containern – viktigt för appbutikens mappar.
+      - /DATA:/DATA
+      # Värdens filer, skrivskyddat: används för att se vilka enheter/mappar som finns.
+      - /:/host:ro
+
+  # Ger appar egna adresser med https (app.din-domän.se). Styrs från WizzOS.
+  proxy:
+    image: ghcr.io/wizz666/wizzos-proxy:${WIZZOS_VERSION:-latest}
+    container_name: wizzos-proxy
+    restart: unless-stopped
+    # Värdens nätverk: proxyn når apparna på samma adresser som du gör.
+    network_mode: host
+    volumes:
+      - /DATA/WizzOS/proxy:/proxy
