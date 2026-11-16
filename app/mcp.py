@@ -631,11 +631,18 @@ _approvals.EXECUTORS.update({k: v[1] for k, v in APPROVAL.items()})
 
 def _instructions(key: dict) -> str:
     from . import i18n
-    text = INSTRUCTIONS + f" Den här nyckeln har nivån: {LEVELS[key['level']]}."
     if i18n.server_lang() == "en":
-        text += (" NOTE: the owner uses WizzOS in English – answer the user in plain English, even though "
-                 "tool results are in Swedish.")
-    return text
+        return (INSTRUCTIONS_EN + f" This key has the level: {i18n.tr(LEVELS[key['level']], 'en')}."
+                " Some tool results may still contain Swedish words – translate them for the user.")
+    return INSTRUCTIONS + f" Den här nyckeln har nivån: {LEVELS[key['level']]}."
+
+
+INSTRUCTIONS_EN = ("You are connected to WizzOS, a home server. Answer in plain English. "
+                   "Start with wizzos_status. Always ask the user before installing, stopping or updating anything. "
+                   "Install new apps on trial (install_app_trial) so nothing is left if the user changes their mind. "
+                   "With the level 'Everything' you can also ask to remove, restore or install permanently – "
+                   "the owner then gets a question on their phone and nothing happens until they answer yes. "
+                   "Tell the user that.")
 
 
 INSTRUCTIONS = ("Du är kopplad till WizzOS, en hemmaserver. Svara på svenska med vanliga ord. "
@@ -645,11 +652,22 @@ INSTRUCTIONS = ("Du är kopplad till WizzOS, en hemmaserver. Svara på svenska m
                 "då får ägaren en fråga i mobilen och inget händer förrän hen svarat ja. Berätta det för användaren.")
 
 
+def _tr_schema(schema: dict, lang: str) -> dict:
+    from . import i18n
+    props = {k: ({**v, "description": i18n.tr(v["description"], lang)} if v.get("description") else v)
+             for k, v in schema.get("properties", {}).items()}
+    return {**schema, "properties": props}
+
+
 def tool_list(level: str) -> list[dict]:
+    from . import i18n
+    lang = i18n.server_lang()
     out = []
     for name, lvl, _, desc, schema, ro in TOOLS:
         if RANK[lvl] > RANK[level]:
             continue
+        if lang != "sv":  # verktygen beskrivs på ägarens språk
+            desc, schema = i18n.tr(desc, lang), _tr_schema(schema, lang)
         out.append({"name": name, "description": desc, "inputSchema": schema,
                     "annotations": {"readOnlyHint": ro, "destructiveHint": False, "openWorldHint": False}})
     return out

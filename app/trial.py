@@ -55,13 +55,20 @@ def remove_dirs(dirs: list[str], log) -> None:
     under /DATA (aldrig /DATA själv eller WizzOS egna mappar)."""
     root = config.DATA_ROOT.resolve()
     home = config.HOME.resolve()
+    appdata = root / "AppData"
     for d in dirs or []:
         p = Path(d).resolve()
         if p == root or root not in p.parents or p == home or home in p.parents:
             continue
-        if p.exists():
-            log(f"Raderar {p}")
-            shutil.rmtree(p, ignore_errors=True)
+        if not p.exists():
+            continue
+        # Delade mappar (t.ex. /DATA/Dokument, /DATA/Media) kan ha fått dina egna
+        # filer under provtiden – de tas bara bort om de är tomma.
+        if appdata not in p.parents and any(f.is_file() for f in p.rglob("*")):
+            log(f"Lämnar {p} kvar – där finns filer.")
+            continue
+        log(f"Raderar {p}")
+        shutil.rmtree(p, ignore_errors=True)
 
 
 def keep(name: str) -> dict:
@@ -89,6 +96,8 @@ def _discard(name: str, log) -> dict:
     t = m.get("trial") or {}
     title = m.get("title", name)
     log(f"Tar bort provappen {title} spårlöst ...")
+    from . import recipes
+    recipes.on_removed(m, log)
     try:
         jobs.run_cmd(apps._compose(name, "down", "-v", "--remove-orphans"), log)
     except Exception as e:  # noqa: BLE001

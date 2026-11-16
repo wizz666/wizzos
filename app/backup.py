@@ -310,6 +310,20 @@ def backup_app(name: str, log) -> dict:
         _app_state(name, last_backup=time.time(), backup_ok=False, backup_msg=str(e))
         raise
     running = snapshots.is_running(name)
+    # WizzOS-paket kan säga hur appen sparar sig själv (t.ex. en databasexport) –
+    # då kan den fortsätta köra medan backupen görs.
+    try:
+        before = json.loads((d / "meta.json").read_text("utf-8")).get("backup_before")
+    except (OSError, ValueError):
+        before = None
+    if running and before:
+        r = subprocess.run(apps._compose(name, "exec", "-T", before["service"], "sh", "-c", before["command"]),
+                           capture_output=True, text=True, timeout=1800)
+        if r.returncode == 0:
+            log(f"{name}: appen sparade sig själv inför backupen – den fortsätter köra.")
+            running = False
+        else:
+            log(f"{name}: förberedelsen misslyckades ({(r.stderr or r.stdout).strip()[-200:]}), pausar i stället.")
     if running:
         log(f"{name}: pausar en kort stund ...")
         subprocess.run(apps._compose(name, "stop"), capture_output=True)

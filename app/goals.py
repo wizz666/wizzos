@@ -90,7 +90,15 @@ GOALS = [
         "mobile": {},
     },
 ]
-BY_ID = {g["id"]: g for g in GOALS}
+def all_goals() -> list[dict]:
+    """Inbyggda mål + mål från WizzOS-paket (x-wizzos.goal)."""
+    from . import recipes
+    ids = {g["id"] for g in GOALS}
+    return GOALS + [g for g in recipes.goals() if g["id"] not in ids]
+
+
+def _by_id(gid: str) -> dict | None:
+    return next((g for g in all_goals() if g["id"] == gid), None)
 
 
 def _installed_for(g: dict, inst: list[dict]) -> dict | None:
@@ -129,7 +137,7 @@ def checks(g: dict) -> list[dict]:
 def listing() -> list[dict]:
     inst = apps.installed()["apps"]
     res = []
-    for g in GOALS:
+    for g in all_goals():
         a = _installed_for(g, inst)
         lv = [c["level"] for c in checks(g)]
         res.append({k: v for k, v in g.items()} | {
@@ -140,7 +148,7 @@ def listing() -> list[dict]:
 
 
 def detail(gid: str) -> dict:
-    g = BY_ID.get(gid)
+    g = _by_id(gid)
     if not g:
         raise ValueError("Okänt mål.")
     item = next(x for x in listing() if x["id"] == gid)
@@ -149,7 +157,7 @@ def detail(gid: str) -> dict:
 
 def install(gid: str, trial_minutes: int = 0) -> dict:
     from . import trial
-    g = BY_ID.get(gid)
+    g = _by_id(gid)
     if not g:
         raise ValueError("Okänt mål.")
     if trial_minutes and trial_minutes not in trial.CHOICES:

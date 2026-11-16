@@ -1,5 +1,12 @@
 # Ändringar
 
+## 2.3.0
+
+- **WizzOS-paket** – ett öppet format (`x-wizzos` i en vanlig compose-fil) för appar som kommer färdiginställda: hemliga nycklar, mappar, inställningsfiler, "Så kommer du igång", koppling till WizzOS och backup utan stopp. Se [docs/wizzos-paket.md](docs/wizzos-paket.md).
+- **Paperless – papper och kvitton** som nytt paket och mål: svensk och engelsk textigenkänning, en inkorg under Filer (Dokument/Inkorg), admin-konto med starkt lösenord och automatisk koppling till sökningen (Ctrl K).
+- **Mer på engelska**: veckobrevet, mejlen i "Om jag försvinner", delningssidor, godkännandesidan, incheckningen och AI-kopplingens verktyg följer serverns språk. Sökningen förstår engelska ord.
+- *English: Open WizzOS package format, Paperless as a ready-made package, and the rest of WizzOS in English.*
+
 ## 2.2.0
 
 - **WizzOS på engelska** – välj Svenska eller English på inloggningen, under Inställningar → Språk eller under Mitt konto. Valet gäller webbläsaren.

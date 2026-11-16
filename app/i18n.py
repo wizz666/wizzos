@@ -55,16 +55,65 @@ def tr(text: str, lang: str | None = None) -> str:
     lang = lang or current()
     if lang == "sv" or not text:
         return text
-    d = _load(lang)
-    key = re.sub(r"\s+", " ", text.strip())
+    _load(lang)
+    if "\n" in text:  # flera rader (t.ex. veckobrevet): rad för rad
+        return "\n".join(tr(line, lang) if line.strip() else line for line in text.split("\n"))
+    lead = text[:len(text) - len(text.lstrip())]
+    tail = text[len(text.rstrip()):]
+    out = _smart(re.sub(r"\s+", " ", text.strip()), lang)
+    return text if out is None else lead + out + tail
+
+
+_PREFIX = re.compile(r"^([^\w\s(\"'«]+\s*)(.+)$", re.S)
+_SWEDISH = re.compile(r"[a-zåäöA-ZÅÄÖ]{2}")
+
+
+def _smart(key: str, lang: str, depth: int = 0) -> str | None:
+    """Hela texten, annars mönster ("{a} appar"), annars utan inledande symbol (✅, 🛡️ …)."""
+    d = _dicts[lang]
     if key in d:
         return d[key]
+    if depth > 3:
+        return None
     for rx, names, out, _ in _pats[lang]:
         m = rx.match(key)
         if m:
-            vals = {n: d.get(v, v) for n, v in zip(names, m.groups())}
+            vals = {}
+            for n, v in zip(names, m.groups()):
+                t = _smart(v, lang, depth + 1) if v != key and _SWEDISH.search(v) else None
+                vals[n] = t if t is not None else v
             return re.sub(r"\{(\w+)\}", lambda x: vals.get(x.group(1), x.group(0)), out)
-    return text
+    m = _PREFIX.match(key)
+    if m:
+        t = _smart(m.group(2), lang, depth + 1)
+        if t is not None:
+            return m.group(1) + t
+    return None
+
+
+_TAGS = re.compile(r"(<style\b.*?</style>|<script\b.*?</script>|<[^>]+>)", re.S | re.I)
+_ATTR = re.compile(r"""\b(placeholder|title|alt|aria-label)=(["'])(.*?)\2""", re.S)
+
+
+def tr_html(html: str, lang: str | None = None) -> str:
+    """Översätt texten i en färdig HTML-sida (sidor som visas utan JavaScript)."""
+    lang = lang or current()
+    if lang == "sv" or not html:
+        return html
+    out = []
+    for part in _TAGS.split(html):
+        if not part:
+            continue
+        if part.startswith("<"):
+            if not part.lower().startswith(("<style", "<script")):
+                part = _ATTR.sub(lambda m: f"{m.group(1)}={m.group(2)}{tr(m.group(3), lang)}{m.group(2)}", part)
+            out.append(part)
+        elif _SWEDISH.search(part):
+            out.append(tr(part, lang))
+        else:
+            out.append(part)
+    res = "".join(out)
+    return re.sub(r"<html lang=[\"']?sv[\"']?", f'<html lang="{lang}"', res, count=1)
 
 
 def _(text: str, lang: str | None = None, **kw) -> str:

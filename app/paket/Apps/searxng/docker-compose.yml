@@ -1,0 +1,118 @@
+name: searxng
+services:
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    network_mode: bridge
+    environment:
+      TZ: $TZ
+    ports:
+      - target: 8080
+        published: "8888"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /DATA/AppData/$AppID/config
+        target: /etc/searxng
+      - type: bind
+        source: /DATA/AppData/$AppID/cache
+        target: /var/cache/searxng
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+x-casaos:
+  main: searxng
+  port_map: "8888"
+  scheme: http
+  index: /
+  category: Network
+  developer: SearXNG (paket av WizzOS)
+  website: https://docs.searxng.org/
+  architectures: [amd64, arm64]
+  icon: https://cdn.jsdelivr.net/gh/searxng/searxng@master/searx/static/themes/simple/img/favicon.svg
+  title:
+    sv_SE: SearXNG – din egen sökmotor
+    en_US: SearXNG – your own search engine
+  tagline:
+    sv_SE: Sök i Google, Bing, DuckDuckGo och Wikipedia på en gång – utan spårning och reklam. Färdiginställd på svenska.
+    en_US: Search Google, Bing, DuckDuckGo and Wikipedia at once – without tracking or ads. Set up and ready to use.
+  description:
+    sv_SE: |-
+      SearXNG är en privat sökmotor som du kör själv. Den frågar många sökmotorer samtidigt och visar svaren på en egen, ren sida. Sökmotorerna ser bara din server – inte dig – så ingen bygger en profil på vad du söker efter, och det finns ingen reklam.
+
+      WizzOS har ställt in den åt dig: ditt språk som standard, måttligt barnfilter, bilder visas via din egen server, inga mätningar och en hemlig nyckel som skapas vid installationen. Gör den till standardsökmotor i webbläsaren och mobilen – WizzOS visar hur.
+    en_US: |-
+      SearXNG is a private search engine you run yourself. It asks many search engines at once and shows the answers on its own clean page. The search engines only see your server – not you – so nobody builds a profile of what you search for, and there are no ads.
+
+      WizzOS has set it up for you: your language by default, a moderate family filter, images shown via your own server, no tracking and a secret key created at install. Make it the default search engine in your browser and on your phone – WizzOS shows how.
+
+# WizzOS-paket: se docs/wizzos-paket.md
+x-wizzos:
+  version: 1
+  search_engine: true
+  secrets:
+    SECRET_KEY: 64
+  dirs:
+    - path: config
+      owner: root
+    - path: cache
+      owner: root
+  files:
+    - path: config/settings.yml
+      owner: root
+      mode: "0640"
+      content: |
+        # Inställt av WizzOS. Ändra gärna – WizzOS skriver aldrig över den här filen.
+        use_default_settings: true
+
+        general:
+          instance_name: "WizzOS"
+          privacypolicy_url: false
+          donation_url: false
+          contact_url: false
+          enable_metrics: false
+
+        search:
+          safe_search: 1
+          autocomplete: "duckduckgo"
+          default_lang: "{{LOCALE}}"
+          formats:
+            - html
+            - json
+
+        server:
+          secret_key: "{{SECRET_KEY}}"
+          limiter: false
+          public_instance: false
+          image_proxy: true
+          method: "GET"
+
+        ui:
+          default_locale: "{{LANG}}"
+          query_in_title: false
+          infinite_scroll: true
+          center_alignment: true
+          default_theme: simple
+          theme_args:
+            simple_style: auto
+          results_on_new_tab: false
+  after_install:
+    - sv_SE: "Färdiga inställningar: ditt språk, ingen spårning, bildproxy, säker sökning (måttlig)."
+      en_US: "Ready-made settings: your language, no tracking, image proxy, safe search (moderate)."

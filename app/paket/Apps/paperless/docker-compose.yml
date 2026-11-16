@@ -1,0 +1,124 @@
+name: paperless
+services:
+  broker:
+    image: docker.io/library/redis:7
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: /DATA/AppData/$AppID/redis
+        target: /data
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: unless-stopped
+    depends_on:
+      - broker
+    ports:
+      - target: 8000
+        published: "8010"
+        protocol: tcp
+    env_file:
+      - wizzos.env
+    environment:
+      PAPERLESS_REDIS: redis://broker:6379
+      PAPERLESS_TIME_ZONE: $TZ
+      USERMAP_UID: $PUID
+      USERMAP_GID: $PGID
+      PAPERLESS_OCR_LANGUAGE: swe+eng
+      PAPERLESS_OCR_LANGUAGES: swe
+      PAPERLESS_CONSUMER_RECURSIVE: "true"
+      PAPERLESS_CONSUMER_POLLING: "60"
+      PAPERLESS_FILENAME_FORMAT: "{created_year}/{correspondent}/{title}"
+      PAPERLESS_ADMIN_USER: admin
+    volumes:
+      - type: bind
+        source: /DATA/AppData/$AppID/data
+        target: /usr/src/paperless/data
+      - type: bind
+        source: /DATA/AppData/$AppID/media
+        target: /usr/src/paperless/media
+      - type: bind
+        source: /DATA/AppData/$AppID/export
+        target: /usr/src/paperless/export
+      - type: bind
+        source: /DATA/Dokument/Inkorg
+        target: /usr/src/paperless/consume
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8000/api/ >/dev/null || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+x-casaos:
+  main: paperless
+  port_map: "8010"
+  scheme: http
+  index: /
+  category: Documents
+  developer: Paperless-ngx (paket av WizzOS)
+  website: https://docs.paperless-ngx.com/
+  architectures: [amd64, arm64]
+  icon: https://cdn.jsdelivr.net/gh/paperless-ngx/paperless-ngx@main/resources/logo/web/svg/square.svg
+  title:
+    sv_SE: Paperless – papper och kvitton
+    en_US: Paperless – papers and receipts
+  tagline:
+    sv_SE: Skanna in brev, kvitton och avtal. Texten blir sökbar (även svenska) och allt sorteras av sig självt.
+    en_US: Scan letters, receipts and contracts. The text becomes searchable and everything is sorted by itself.
+  description:
+    sv_SE: |-
+      Paperless-ngx gör om papper till ett sökbart arkiv. Lägg en skannad PDF eller ett foto i mappen Dokument/Inkorg – Paperless läser texten (OCR), gissar avsändare, datum och typ, och sparar dokumentet ordnat efter år.
+
+      WizzOS har ställt in det åt dig: svensk och engelsk textigenkänning, en inkorg du når under Filer, ett admin-konto med starkt lösenord, och kopplingen till WizzOS sökning – så hittar Ctrl K även texten i dina papper. Ingår i den nattliga backupen.
+    en_US: |-
+      Paperless-ngx turns paper into a searchable archive. Put a scanned PDF or a photo in the folder Dokument/Inkorg – Paperless reads the text (OCR), guesses sender, date and type, and stores the document sorted by year.
+
+      WizzOS has set it up for you: Swedish and English text recognition, an inbox you reach under Files, an admin account with a strong password, and the link to WizzOS search – so Ctrl K also finds the text in your papers. Included in the nightly backup.
+
+# WizzOS-paket: se docs/wizzos-paket.md
+x-wizzos:
+  version: 1
+  link: paperless
+  secrets:
+    SECRET_KEY: 50
+    ADMIN_PASSWORD: 16
+  dirs:
+    - path: redis
+    - path: data
+    - path: media
+    - path: export
+    - path: /DATA/Dokument/Inkorg
+  env:
+    PAPERLESS_SECRET_KEY: "{{SECRET_KEY}}"
+    PAPERLESS_ADMIN_PASSWORD: "{{ADMIN_PASSWORD}}"
+    PAPERLESS_URL: "{{APP_URL}}"
+  after_install:
+    - sv_SE: "🔑 Logga in i Paperless med användarnamnet admin och lösenordet {{ADMIN_PASSWORD}} – spara det i din lösenordshanterare. Det visas inte igen."
+      en_US: "🔑 Log in to Paperless with the username admin and the password {{ADMIN_PASSWORD}} – save it in your password manager. It won't be shown again."
+    - sv_SE: "📥 Lägg skannade papper i Filer → Dokument → Inkorg. Första starten tar ett par minuter (svensk textigenkänning hämtas)."
+      en_US: "📥 Put scanned papers in Files → Dokument → Inkorg. The first start takes a couple of minutes (Swedish text recognition is downloaded)."
+  goal:
+    id: papers
+    emoji: "🗂️"
+    min_ram_gb: 2
+    title:
+      sv_SE: Papper och kvitton
+      en_US: Papers and receipts
+    pitch:
+      sv_SE: Skanna in brev, kvitton och avtal – texten blir sökbar och allt sorteras av sig självt. Hitta garantin till diskmaskinen på fem sekunder.
+      en_US: Scan letters, receipts and contracts – the text becomes searchable and everything is sorted by itself. Find the dishwasher warranty in five seconds.
+    disk:
+      sv_SE: Lite – ett år med brev och kvitton brukar ta några hundra MB.
+      en_US: Little – a year of letters and receipts usually takes a few hundred MB.
+    steps:
+      - sv_SE: Logga in i Paperless med användarnamnet admin och lösenordet som visades när installationen blev klar. Byt gärna lösenord under din profil.
+        en_US: Log in to Paperless with the username admin and the password shown when the installation finished. Feel free to change it under your profile.
+      - sv_SE: Lägg skannade papper (PDF eller foton) i Filer → Dokument → Inkorg, eller ställ in skannerns "skanna till mapp" dit. Paperless hämtar dem inom en minut.
+        en_US: Put scanned papers (PDF or photos) in Files → Dokument → Inkorg, or point your scanner's "scan to folder" there. Paperless picks them up within a minute.
+      - sv_SE: Sök med Ctrl K i WizzOS – kopplingen till Paperless är redan gjord, så även texten i dina papper hittas.
+        en_US: Search with Ctrl K in WizzOS – the link to Paperless is already made, so the text in your papers is found too.

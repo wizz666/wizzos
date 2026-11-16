@@ -309,6 +309,9 @@ def install(app: dict, name: str, port_overrides: dict, env_overrides: dict,
         raise ValueError(f"Appen finns inte för den här processorn ({arch()}).")
     created: list[str] = []
     doc, notes = build_compose(app["compose"], name, port_overrides, env_overrides, created)
+    from . import recipes
+    doc.pop("x-wizzos", None)  # paketets instruktioner är WizzOS sak, inte docker compose
+    pkg_ctx = recipes.context(app, name) if recipes.block(app) else {}
     meta = {
         "name": name, "title": app["title"], "icon": app.get("icon", ""),
         "tagline": app.get("tagline", ""), "category": app.get("category", ""),
@@ -317,6 +320,8 @@ def install(app: dict, name: str, port_overrides: dict, env_overrides: dict,
         "port": _web_port(app.get("port_map", ""), app["compose"], doc, app.get("main", "")),
         "main": app.get("main", ""),
     }
+    if recipes.backup_before(app):
+        meta["backup_before"] = recipes.backup_before(app)
     gui = _gui_https_port(doc, meta["main"])
     if gui:
         meta["port"], meta["scheme"] = gui, "https"
@@ -336,8 +341,7 @@ def install(app: dict, name: str, port_overrides: dict, env_overrides: dict,
         vals = _values(name)
         (d / ".env").write_text("".join(f"{k}={v}\n" for k, v in vals.items()), "utf-8")
         try:
-            from . import recipes
-            recipes.prepare(app.get("key", ""), name, log)  # WizzOS-paket: färdiga inställningsfiler
+            recipes.prepare(app, name, log, pkg_ctx)  # WizzOS-paket: nycklar, mappar, färdiga filer
             log("Hämtar programmet (kan ta några minuter första gången) ...")
             jobs.run_cmd(_compose(name, "pull"), log)
             if trial_minutes:
@@ -348,6 +352,7 @@ def install(app: dict, name: str, port_overrides: dict, env_overrides: dict,
             log("Startar ...")
             jobs.run_cmd(_compose(name, "up", "-d", "--remove-orphans"), log)
             proxy.safe_apply()
+            recipes.after_install(app, name, meta, log, pkg_ctx)
             url = next((a["url"] for a in installed()["apps"] if a["name"] == name), "")
             log(f"Klart! {meta['title']} är installerad." + (f" Adress: {url}" if url else ""))
             if trial_minutes:
@@ -637,9 +642,12 @@ def uninstall(name: str, delete_data: bool) -> str:
     d = app_dir(name)
     if not d.exists():
         raise ValueError("Appen finns inte.")
-    title = json.loads((d / "meta.json").read_text("utf-8")).get("title", name)
+    meta = json.loads((d / "meta.json").read_text("utf-8"))
+    title = meta.get("title", name)
 
     def work(log):
+        from . import recipes
+        recipes.on_removed(meta, log)
         try:
             snapshots.create(name, "uninstall", log, start_after=False)
         except Exception as e:  # noqa: BLE001

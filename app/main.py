@@ -1117,6 +1117,12 @@ def shares_stop(token: str):
     return {"ok": True}
 
 
+def _html(content: str, *args, **kwargs) -> HTMLResponse:
+    """Publika sidor (delning, godkännande, incheckning, AI-inloggning) visas utan
+    JavaScript – därför översätts de här, till besökarens språk eller serverns."""
+    return HTMLResponse(i18n.tr_html(content), *args, **kwargs)
+
+
 _PUBLIC_HEADERS = {"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow",
                    "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; "
                                               "form-action 'self'; frame-ancestors 'none'"}
@@ -1136,13 +1142,13 @@ async def _form(request: Request) -> dict:
 @app.get("/s/{token}")
 def share_page(token: str, request: Request, p: str = ""):
     if not shares.get(token):
-        return HTMLResponse(shares.gone_page(), 404, headers=_PUBLIC_HEADERS)
+        return _html(shares.gone_page(), 404, headers=_PUBLIC_HEADERS)
     if _share_locked(token, request):
-        return HTMLResponse(shares.pin_page(token), headers=_PUBLIC_HEADERS)
+        return _html(shares.pin_page(token), headers=_PUBLIC_HEADERS)
     try:
-        return HTMLResponse(shares.view_page(token, p), headers=_PUBLIC_HEADERS)
+        return _html(shares.view_page(token, p), headers=_PUBLIC_HEADERS)
     except (FileNotFoundError, ValueError, OSError):
-        return HTMLResponse(shares.gone_page(), 404, headers=_PUBLIC_HEADERS)
+        return _html(shares.gone_page(), 404, headers=_PUBLIC_HEADERS)
 
 
 @app.post("/s/{token}/unlock")
@@ -1153,9 +1159,9 @@ async def share_unlock(token: str, request: Request):
     try:
         ok = shares.check_pin(token, f.get("pin", ""), ip)
     except ValueError as e:
-        return HTMLResponse(shares.pin_page(token, str(e)), 429, headers=_PUBLIC_HEADERS)
+        return _html(shares.pin_page(token, str(e)), 429, headers=_PUBLIC_HEADERS)
     if not ok:
-        return HTMLResponse(shares.pin_page(token, "Fel kod."), 401, headers=_PUBLIC_HEADERS)
+        return _html(shares.pin_page(token, "Fel kod."), 401, headers=_PUBLIC_HEADERS)
     resp = RedirectResponse(f"/s/{token}", 303)
     resp.set_cookie(f"wzs_{token[:10]}", shares.unlock_cookie(token), max_age=86400, httponly=True,
                     samesite="lax", secure=request.url.scheme == "https", path=f"/s/{token}")
@@ -1165,7 +1171,7 @@ async def share_unlock(token: str, request: Request):
 @app.get("/s/{token}/dl")
 def share_download(token: str, request: Request, p: str = "", zip: bool = False):
     if not shares.get(token) or _share_locked(token, request):
-        return HTMLResponse(shares.gone_page(), 404, headers=_PUBLIC_HEADERS)
+        return _html(shares.gone_page(), 404, headers=_PUBLIC_HEADERS)
     try:
         f = shares.target(token, p)
     except (FileNotFoundError, ValueError):
@@ -1259,7 +1265,7 @@ def legacy_tell():
 
 @app.get("/alive/{token}")
 def alive_get(token: str):
-    return HTMLResponse(legacy.alive_page(token, legacy.token_kind(token)), headers=_PUBLIC_HEADERS)
+    return _html(legacy.alive_page(token, legacy.token_kind(token)), headers=_PUBLIC_HEADERS)
 
 
 @app.post("/alive/{token}")
@@ -1270,8 +1276,8 @@ async def alive_post(token: str, request: Request):
     try:
         legacy.check_in(token, f.get("pin", ""), ip)
     except ValueError as e:
-        return HTMLResponse(legacy.alive_page(token, kind, str(e)), 400, headers=_PUBLIC_HEADERS)
-    return HTMLResponse(legacy.alive_page(token, kind, ok=True), headers=_PUBLIC_HEADERS)
+        return _html(legacy.alive_page(token, kind, str(e)), 400, headers=_PUBLIC_HEADERS)
+    return _html(legacy.alive_page(token, kind, ok=True), headers=_PUBLIC_HEADERS)
 
 
 # ---------- AI-koppling (MCP) ----------
@@ -1389,20 +1395,20 @@ def phone_base(body: BaseIn):
 
 @app.get("/approve/{token}")
 def approve_page(token: str):
-    return HTMLResponse(approvals.page(token), headers=_PUBLIC_HEADERS)
+    return _html(approvals.page(token), headers=_PUBLIC_HEADERS)
 
 
 @app.post("/approve/{token}/{what}")
 def approve_post(token: str, what: str):
     r = approvals.by_token(token)
     if not r or what not in ("yes", "no"):
-        return HTMLResponse(approvals.page(token), 404, headers=_PUBLIC_HEADERS)
+        return _html(approvals.page(token), 404, headers=_PUBLIC_HEADERS)
     msg = ""
     try:
         approvals.decide(r["id"], what == "yes", "mobilen")
     except ValueError as e:
         msg = str(e)
-    return HTMLResponse(approvals.page(token, msg), headers=_PUBLIC_HEADERS)
+    return _html(approvals.page(token, msg), headers=_PUBLIC_HEADERS)
 
 
 # ---------- inloggning via webben för AI-appar (OAuth 2.1) ----------
@@ -1452,12 +1458,12 @@ def oauth_authorize(request: Request):
     q = dict(request.query_params)
     hdr = {**_PUBLIC_HEADERS, "Content-Security-Policy": _PUBLIC_HEADERS["Content-Security-Policy"].replace("form-action 'self'", "form-action 'self' https: http://localhost:* http://127.0.0.1:*")}
     if not mcp.enabled():
-        return HTMLResponse(oauth.error_page("AI-kopplingen är avstängd i WizzOS. Slå på den på startsidan och försök igen."), 503, headers=hdr)
+        return _html(oauth.error_page("AI-kopplingen är avstängd i WizzOS. Slå på den på startsidan och försök igen."), 503, headers=hdr)
     try:
         params, c = oauth.check_request(q)
     except ValueError as e:
-        return HTMLResponse(oauth.error_page(str(e)), 400, headers=hdr)
-    return HTMLResponse(oauth.consent_page(params, c), headers=hdr)
+        return _html(oauth.error_page(str(e)), 400, headers=hdr)
+    return _html(oauth.consent_page(params, c), headers=hdr)
 
 
 @app.post("/oauth/authorize")
@@ -1469,7 +1475,7 @@ async def oauth_authorize_post(request: Request):
     kind, val = oauth.decide(f, ip)
     if kind == "redirect":
         return RedirectResponse(val, 302)
-    return HTMLResponse(val, headers=hdr)
+    return _html(val, headers=hdr)
 
 
 @app.post("/oauth/token")

@@ -41,7 +41,7 @@ def save(url: str, token: str | None) -> dict:
 def _get(path: str, params: dict | None = None, timeout: float = 6) -> dict:
     c = cfg()
     r = httpx.get(f"{c['url']}{path}", params=params, timeout=timeout, follow_redirects=True,
-                  headers={"Authorization": f"Token {c['token']}", "Accept": "application/json; version=5"})
+                  headers={"Authorization": f"Token {c['token']}", "Accept": "application/json"})  # serverns egen version – nya Paperless stöder inte gamla
     if r.status_code in (401, 403):
         raise ValueError("Paperless godkände inte token.")
     r.raise_for_status()

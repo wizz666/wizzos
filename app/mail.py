@@ -52,7 +52,10 @@ def send(to: str | list[str], subject: str, text: str, reply_to: str = "") -> No
         raise ValueError("E-post är inte inställd (Inställningar → E-post).")
     to = [to] if isinstance(to, str) else to
     msg = EmailMessage()
-    from . import alerts
+    from . import alerts, i18n
+    # Mejl (påminnelser, brevet i "Om jag försvinner", test) skrivs på serverns språk.
+    lang = i18n.server_lang()
+    subject, text = i18n.tr(subject, lang), i18n.tr(text, lang)
     msg["From"] = formataddr((f"WizzOS ({alerts._server_name()})", c["sender"]))
     msg["To"] = ", ".join(to)
     msg["Subject"] = subject

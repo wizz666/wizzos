@@ -29,6 +29,7 @@ Kör samma rad igen för att uppdatera manuellt. Normalt behövs det inte: **Wiz
 **Enkelt**
 - **Vad vill du göra?** – välj ett mål ("Familjens fotoalbum", "Lösenord för familjen" …) i stället för en app. WizzOS kollar att servern klarar det och visar hur du kommer igång.
 - **Appbutik** – hundratals appar från CasaOS-butikerna (och fler du lägger till).
+- **WizzOS-paket** – appar som kommer färdiginställda (t.ex. SearXNG och Paperless). Ett öppet format – [gör egna](docs/wizzos-paket.md).
 - **Sök i allt** (Ctrl K) – appar, inställningar, filnamn, innehållet i dokument och webben via din egen sökmotor.
 - **Filer** – bläddra, ladda upp, dela med länkar som slutar fungera av sig själva.
 - **Svenska eller engelska** – välj språk på inloggningen eller under Inställningar.

@@ -92,6 +92,7 @@ def parse_compose(text: str, store_id: str, folder: str) -> dict | None:
         "main": main,
         "services": len(services),
         "compose": text,
+        "wizzos": doc.get("x-wizzos") if isinstance(doc.get("x-wizzos"), dict) else {},
     }
 
 
