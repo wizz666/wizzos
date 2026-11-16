@@ -1,4 +1,9 @@
-"""Inloggning: ett lösenord, en signerad cookie. Ingen användardatabas."""
+"""Inloggning: ägarens lösenord + familjekonton (app/users.py), en signerad cookie.
+
+Cookien är "utgång.id.signatur". Signaturen täcker även personens
+"generation", så ett nytt lösenord eller en borttagen person gör gamla
+inloggningar ogiltiga direkt. Äldre cookies ("utgång.signatur") gäller ägaren.
+"""
 from __future__ import annotations
 
 import base64
@@ -20,22 +25,28 @@ def _hash(password: str, salt: bytes) -> str:
     return base64.b64encode(salt).decode() + "$" + base64.b64encode(key).decode()
 
 
+def hash_password(password: str) -> str:
+    return _hash(password, secrets.token_bytes(16))
+
+
+def verify_hash(password: str, stored: str) -> bool:
+    if "$" not in (stored or ""):
+        return False
+    salt = base64.b64decode(stored.split("$", 1)[0])
+    return hmac.compare_digest(_hash(password, salt), stored)
+
+
 def has_password() -> bool:
     return bool(config.load().get("password_hash"))
 
 
 def set_password(password: str) -> None:
-    # Nytt hemligt värde = alla gamla inloggningar slutar gälla.
-    config.update(password_hash=_hash(password, secrets.token_bytes(16)),
-                  secret=secrets.token_hex(32))
+    # Nytt hemligt värde = alla gamla inloggningar slutar gälla (även familjens).
+    config.update(password_hash=hash_password(password), secret=secrets.token_hex(32))
 
 
 def check_password(password: str) -> bool:
-    stored = config.load().get("password_hash", "")
-    if "$" not in stored:
-        return False
-    salt = base64.b64decode(stored.split("$", 1)[0])
-    return hmac.compare_digest(_hash(password, salt), stored)
+    return verify_hash(password, config.load().get("password_hash", ""))
 
 
 def too_many_failures(ip: str) -> bool:
@@ -49,19 +60,42 @@ def note_failure(ip: str) -> None:
     _failures.setdefault(ip, []).append(time.time())
 
 
-def make_token() -> str:
-    secret = config.load()["secret"].encode()
+def _sig(secret: str, expires: str, uid: str, gen: int) -> str:
+    msg = expires if uid == "owner" and gen == 0 else f"{expires}.{uid}.{gen}"
+    return hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
+
+
+def make_token(uid: str = "owner") -> str:
+    from . import users
+    u = users.get(uid)
+    if not u:
+        raise ValueError("Okänd person.")
     expires = str(int(time.time()) + SESSION_DAYS * 86400)
-    sig = hmac.new(secret, expires.encode(), hashlib.sha256).hexdigest()
-    return f"{expires}.{sig}"
+    return f"{expires}.{uid}.{_sig(config.load()['secret'], expires, uid, u.get('gen', 0))}"
+
+
+def current(token: str | None) -> dict | None:
+    """Personen som cookien hör till, eller None."""
+    from . import users
+    if not token or "." not in token:
+        return None
+    secret = config.load().get("secret", "")
+    if not secret:
+        return None
+    parts = token.split(".")
+    if len(parts) == 2:
+        expires, uid, sig = parts[0], "owner", parts[1]
+    elif len(parts) == 3:
+        expires, uid, sig = parts
+    else:
+        return None
+    if not expires.isdigit() or int(expires) <= time.time():
+        return None
+    u = users.get(uid)
+    if not u or not hmac.compare_digest(sig, _sig(secret, expires, uid, u.get("gen", 0))):
+        return None
+    return u
 
 
 def valid_token(token: str | None) -> bool:
-    if not token or "." not in token:
-        return False
-    secret = config.load().get("secret", "")
-    if not secret:
-        return False
-    expires, sig = token.split(".", 1)
-    good = hmac.new(secret.encode(), expires.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(sig, good) and expires.isdigit() and int(expires) > time.time()
+    return current(token) is not None

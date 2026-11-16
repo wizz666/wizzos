@@ -31,6 +31,7 @@ Kör samma rad igen för att uppdatera manuellt. Normalt behövs det inte: **Wiz
 - **Appbutik** – hundratals appar från CasaOS-butikerna (och fler du lägger till).
 - **Sök i allt** (Ctrl K) – appar, inställningar, filnamn, innehållet i dokument och webben via din egen sökmotor.
 - **Filer** – bläddra, ladda upp, dela med länkar som slutar fungera av sig själva.
+- **Familjekonton** – familj och gäster får egna lösenord, ser bara apparna du väljer, och familjen får en egen mapp.
 
 **Trygghet**
 - **Säkerhetskoll i klartext** – öppna portar, standardlösenord, SSH, väntande omstart … med betyg och vad du ska göra.

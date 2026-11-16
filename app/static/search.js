@@ -137,6 +137,7 @@ function finderDraw(r, web, pl) {
 }
 
 document.addEventListener("keydown", (e) => {
+  if (document.body.classList.contains("limited")) return;
   if ($("#shell")?.classList.contains("hidden")) return;
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "") || document.activeElement?.isContentEditable;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if ($("#finder")) closeFinder(); else openFinder(); }

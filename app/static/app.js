@@ -136,8 +136,18 @@ function showAuth(setup) {
   $("#auth-pw2").classList.toggle("hidden", !setup);
   $("#auth-perks").classList.toggle("hidden", !setup);
   $("#auth-pw").autocomplete = setup ? "new-password" : "current-password";
+  // Familjekonton: välj vem du är
+  const people = setup ? [] : (window.WIZZ_PEOPLE || []);
+  const box = $("#auth-people");
+  if (!people.some((p) => p.id === authUser)) authUser = (people.find((p) => p.id === lsGet("wz-user")) || people[0] || {}).id || "";
+  box.classList.toggle("hidden", !people.length);
+  box.innerHTML = people.length ? `<p class="hint">Vem är du?</p><div class="who-row">${people.map((p) => `<button type="button" class="who ${p.id === authUser ? "on" : ""}" data-u="${esc(p.id)}"><span>${esc(p.emoji || p.name.charAt(0))}</span>${esc(p.name)}</button>`).join("")}</div>` : "";
+  $$("[data-u]", box).forEach((b) => b.onclick = () => { authUser = b.dataset.u; $$("[data-u]", box).forEach((x) => x.classList.toggle("on", x === b)); $("#auth-pw").focus(); });
   $("#auth-pw").focus();
 }
+let authUser = "";
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* privat läge */ } }
 $("#auth-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const pw = $("#auth-pw").value, err = $("#auth-err");
@@ -148,7 +158,8 @@ $("#auth-form").addEventListener("submit", async (e) => {
       if (pw !== $("#auth-pw2").value) throw new Error("Lösenorden är inte lika.");
       await api("/api/setup", { method: "POST", body: { password: pw } });
     } else {
-      await api("/api/login", { method: "POST", body: { password: pw } });
+      await api("/api/login", { method: "POST", body: { password: pw, user: authUser } });
+      if (authUser) lsSet("wz-user", authUser);
     }
     $("#auth-pw").value = ""; $("#auth-pw2").value = "";
     startApp();
@@ -435,6 +446,8 @@ const pages = {
           <div class="actions"><button class="btn primary" id="save">Spara</button></div>
         </div>
 
+        <div class="card" id="famcard"><h2>👪 Familj och gäster</h2><p class="hint">Laddar …</p></div>
+
         <div class="card" id="selfupd"><h2>⬆️ WizzOS</h2><p class="hint">Laddar …</p></div>
 
         <div class="card" id="mailcard"><h2>📧 E-post</h2><p class="hint">Laddar …</p></div>
@@ -596,6 +609,7 @@ const pages = {
     const alBody = () => ({ enabled: $("#alon").checked, ntfy_url: $("#alu").value, ntfy_topic: $("#alt").value, ntfy_token: $("#alk").value, webhook_url: $("#alw").value, disk_percent: parseInt($("#ald").value || "90", 10) });
     mailCard().catch(() => {});
     selfUpdCard().catch(() => {});
+    familyCard().catch(() => {});
     aiLinkCard().catch(() => {});
     docCard().catch(() => {});
     $("#alsave").onclick = async () => { try { await api("/api/alerts", { method: "PUT", body: alBody() }); $("#alk").value = ""; toast("Larmen är sparade", "good"); route(); } catch (e) { toast(e.message, "bad"); } };
@@ -794,7 +808,7 @@ function filesMenu(anchor, e, p) {
   else if (isText(e.name)) items.push({ label: "Öppna och redigera", run: () => filesEdit(p) });
   else if (isImage(e.name) || isMedia(e.name)) items.push({ label: "Visa", run: () => filesOpen(e, p) });
   items.push({ label: e.dir ? "Ladda ner som zip" : "Ladda ner", run: () => { location.href = dlUrl(p); } });
-  items.push({ label: "🔗 Dela länk …", run: () => shareModal(p, e.name, e.dir) });
+  if (window.ME?.role === "admin") items.push({ label: "🔗 Dela länk …", run: () => shareModal(p, e.name, e.dir) });
   items.push({ label: "Byt namn …", run: () => filesRename(e, p) });
   items.push({ label: "Flytta …", run: () => { fs.clip = { paths: [p], copy: false }; toast("Gå till mappen där den ska ligga och tryck på Lägg här"); filesBar(); } });
   items.push({ label: "Kopiera …", run: () => { fs.clip = { paths: [p], copy: true }; toast("Gå till mappen där kopian ska ligga och tryck på Lägg här"); filesBar(); } });
@@ -1679,8 +1693,9 @@ $("#ai-input").addEventListener("input", (e) => { e.target.style.height = "auto"
 async function route() {
   clearTimers(); closeMenu(); $("#view").classList.remove("settled");
   const page = (location.hash.replace(/^#\/?/, "").split("/")[0]) || "home";
-  const fn = pages[page] || pages.home;
-  $$(".side a[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === (pages[page] ? page : "home")));
+  const P = window.ME && window.ME.role !== "admin" ? limitedPages : pages;
+  const fn = P[page] || P.home;
+  $$(".side a[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === (P[page] ? page : "home")));
   const view = $("#view");
   // Ny sida = börja högst upp (annars öppnas t.ex. Inställningar mitt i).
   if (page !== route.last) window.scrollTo(0, 0);
@@ -1700,7 +1715,9 @@ function settingsToc() {
 }
 
 let sideClock = null;
-function startApp() {
+async function startApp() {
+  try { window.ME = await api("/api/me"); } catch (e) { return; }
+  applyRole();
   const ss = $("#side-search"); if (ss) ss.onclick = () => openFinder();
   if (!sideClock) { tickClock(); sideClock = setInterval(tickClock, 1000); }
   $("#auth").classList.add("hidden");
@@ -1717,7 +1734,7 @@ window.addEventListener("hashchange", () => { closeModal(); route(); });
 (async () => {
   try {
     const s = await api("/api/state");
-    window.WIZZ_VERSION = s.version; $("#ver").textContent = `v${s.version}`;
+    window.WIZZ_VERSION = s.version; $("#ver").textContent = `v${s.version}`; window.WIZZ_PEOPLE = s.people || [];
     if (s.setup) showAuth(true); else if (!s.logged_in) showAuth(false); else startApp();
   } catch (e) { document.body.insertAdjacentHTML("beforeend", `<p class="empty">Kan inte nå servern.</p>`); }
 })();

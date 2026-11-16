@@ -1,5 +1,15 @@
 # Ändringar
 
+## 2.1.0
+
+- **Familjekonton**: ge familj och vänner egna lösenord under Inställningar → Familj och gäster.
+  - **Familj** ser bara apparna du väljer och har en egen mapp (Hem/namn) med egen papperskorg.
+  - **Gäst** ser bara apparna du väljer.
+  - **Admin** får göra allt, precis som du.
+- Inloggningen frågar "Vem är du?" så fort det finns fler än du.
+- Familj och gäster kan byta sitt eget lösenord under Mitt konto. Byter du deras lösenord eller tar bort dem loggas de ut direkt.
+- Bara ägaren räknas som "närvarande" för Om jag försvinner.
+
 ## 2.0.0
 
 Första publika versionen av WizzOS.

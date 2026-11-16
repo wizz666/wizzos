@@ -18,6 +18,8 @@ import stat
 import threading
 import time
 import zipfile
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from . import config
@@ -30,8 +32,31 @@ PREVIEW_IMAGES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/a
 
 # ---------- sökvägar ----------
 
-def _root() -> Path:
+# En familjemedlem ser bara sin egen mapp: då pekar "/" på /DATA/Hem/<namn>.
+_scope: ContextVar[Path | None] = ContextVar("wizzos_files_scope", default=None)
+
+
+@contextmanager
+def scoped(root: Path | None):
+    tok = _scope.set(root)
+    try:
+        yield
+    finally:
+        _scope.reset(tok)
+
+
+def _data_root() -> Path:
     return config.DATA_ROOT.resolve()
+
+
+def _root() -> Path:
+    return _scope.get() or _data_root()
+
+
+def _data_rel(p: Path) -> str:
+    """Sökväg räknad från /DATA oavsett vem som är inloggad (för papperskorgen)."""
+    r = p.relative_to(_data_root()).as_posix()
+    return "/" + r if r != "." else "/"
 
 
 def _blocked(p: Path) -> bool:
@@ -158,7 +183,7 @@ def _trash_put(p: Path, reason: str = "deleted") -> str:
     d.mkdir(parents=True)
     os.chmod(d, 0o700)
     size = _size(p)
-    info = {"orig": to_rel(p), "name": p.name, "time": int(time.time()), "size": size,
+    info = {"orig": _data_rel(p), "name": p.name, "time": int(time.time()), "size": size,
             "dir": p.is_dir() and not p.is_symlink(), "reason": reason}
     shutil.move(str(p), str(d / "item"))
     (d / "info.json").write_text(json.dumps(info, ensure_ascii=False), "utf-8")
@@ -181,15 +206,29 @@ def _size(p: Path) -> int:
     return total
 
 
+def _scope_prefix() -> str | None:
+    sc = _scope.get()
+    return _data_rel(sc) if sc else None
+
+
+def _in_prefix(orig: str, prefix: str | None) -> bool:
+    return prefix is None or orig == prefix or orig.startswith(prefix.rstrip("/") + "/")
+
+
 def trash_list() -> list[dict]:
     out = []
     if not TRASH.exists():
         return out
+    prefix = _scope_prefix()
     for d in sorted(TRASH.iterdir(), reverse=True):
         try:
             info = json.loads((d / "info.json").read_text("utf-8"))
         except (OSError, ValueError):
             continue
+        if not _in_prefix(info.get("orig", ""), prefix):
+            continue
+        if prefix:
+            info["orig"] = info["orig"][len(prefix):] or "/"
         info["id"] = d.name
         out.append(info)
     return out
@@ -207,10 +246,14 @@ def _trash_dir(tid: str) -> Path:
 def trash_restore(tid: str) -> str:
     d = _trash_dir(tid)
     info = json.loads((d / "info.json").read_text("utf-8"))
+    if not _in_prefix(info["orig"], _scope_prefix()):
+        raise ValueError("Finns inte i papperskorgen längre.")
     parent_rel, _, name = info["orig"].rstrip("/").rpartition("/")
-    parent = resolve(parent_rel)
+    parent = (_data_root() / parent_rel.lstrip("/")).resolve()
+    if not _inside(parent) or _blocked(parent):
+        raise ValueError("Den sökvägen är inte tillåten.")
     parent.mkdir(parents=True, exist_ok=True)
-    target = parent / name
+    target = parent / _check_name(name)
     if os.path.lexists(target):
         # Det finns redan något med samma namn (t.ex. den nya versionen av en
         # redigerad fil) – lägg undan den så att ångra går att ångra.
@@ -224,7 +267,16 @@ def trash_delete(tid: str | None = None) -> int:
     """Radera för gott: ett id, eller allt om tid är None."""
     if not TRASH.exists():
         return 0
-    dirs = [_trash_dir(tid)] if tid else [d for d in TRASH.iterdir() if d.is_dir()]
+    if tid:
+        d = _trash_dir(tid)
+        info = json.loads((d / "info.json").read_text("utf-8"))
+        if not _in_prefix(info.get("orig", ""), _scope_prefix()):
+            raise ValueError("Finns inte i papperskorgen längre.")
+        dirs = [d]
+    elif _scope.get():
+        dirs = [TRASH / i["id"] for i in trash_list()]  # bara personens egna
+    else:
+        dirs = [d for d in TRASH.iterdir() if d.is_dir()]
     for d in dirs:
         shutil.rmtree(d, ignore_errors=True)
     return len(dirs)
@@ -335,7 +387,7 @@ def write_text(rel: str, text: str, mtime: int | None = None) -> dict:
     tid = _trash_put(old, "edited")
     info_f = TRASH / tid / "info.json"
     info = json.loads(info_f.read_text("utf-8"))
-    info.update(orig=to_rel(p), name=p.name)
+    info.update(orig=_data_rel(p), name=p.name)
     info_f.write_text(json.dumps(info, ensure_ascii=False), "utf-8")
     tmp = p.with_name(f".{p.name}.wz-tmp")
     tmp.write_bytes(data)

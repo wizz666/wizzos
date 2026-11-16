@@ -726,3 +726,28 @@ kbd { font: 600 11px/1 ui-monospace, monospace; padding: 3px 6px; border-radius:
 .wl-nav .btn { background: none; border: 0; color: var(--muted); }
 .rel-notes { font-size: 14px; margin-top: 8px; }
 @media (max-width: 640px) { .wl-steps { grid-template-columns: 1fr 1fr; } .wl-card { padding: 4px 16px 18px; } }
+
+/* ---------- Familjekonton ---------- */
+.only-limited { display: none !important; }
+body.limited .side a.only-limited { display: flex !important; }
+body.limited .side a[data-nav="store"], body.limited .side a[data-nav="backup"], body.limited .side a[data-nav="trygghet"],
+body.limited .side a[data-nav="settings"], body.limited #side-search, body.no-files .side a[data-nav="files"] { display: none; }
+#whoami { display: block; color: var(--text); font-weight: 600; margin-bottom: 4px; }
+#whoami:empty { display: none; }
+.auth-people { margin: 4px 0 6px; }
+.auth-people .hint { margin: 0 0 8px; }
+.who-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.who { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 76px; padding: 10px 8px; border-radius: 14px;
+  border: 1px solid var(--line); background: var(--card); color: var(--muted); font-weight: 600; font-size: 13px; cursor: pointer; }
+.who span { font-size: 24px; line-height: 1; }
+.who.on { border-color: var(--accent); color: var(--text); background: var(--card-hi); box-shadow: 0 0 0 2px rgba(139, 123, 255, .25); }
+.who-ico { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; background: var(--card-hi); flex: none; }
+.emoji-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.emoji-row button { font-size: 20px; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); cursor: pointer; }
+.emoji-row button.on { border-color: var(--accent); background: var(--card-hi); }
+.app-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.app-check { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; font-weight: 500; min-width: 0; }
+.app-check input { width: auto; margin: 0; }
+.app-check .ico, .app-check .ico-fallback { width: 24px; height: 24px; border-radius: 6px; flex: none; font-size: 12px; }
+.app-check span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-check:has(input:checked) { border-color: var(--accent); background: var(--card-hi); }

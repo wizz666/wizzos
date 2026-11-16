@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from contextlib import nullcontext
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -12,20 +13,39 @@ from pydantic import BaseModel
 
 from . import (__version__, ai, alerts, approvals, apps, auth, backup, card, config, cost, docindex, files, finder, goals, homeassistant, jobs,
                legacy, mail, mcp, oauth, paperless, proxy, security, selfupdate, shares, snapshots,
-               letter, move, nestward, store, system, trial, updater)
+               letter, move, nestward, store, system, trial, updater, users)
 
 STATIC = Path(__file__).parent / "static"
 app = FastAPI(title="WizzOS", docs_url=None, redoc_url=None, openapi_url=None)
 OPEN_PATHS = {"/api/state", "/api/login", "/api/setup"}
 
 
+# Det här får familj och gäster använda – allt annat är bara för ägaren och admin.
+_LIMITED = {("GET", "/api/me"), ("GET", "/api/me/apps"), ("POST", "/api/me/password"),
+            ("POST", "/api/logout")}
+_FAMILY_RE = re.compile(r"^/api/(files(/[a-z]+)?|trash|trash/[\w-]+(/restore)?)$")
+
+
+def _limited_ok(user: dict, method: str, path: str) -> bool:
+    if (method, path) in _LIMITED:
+        return True
+    if user["role"] == "family" and _FAMILY_RE.match(path):
+        return True
+    return False
+
+
 @app.middleware("http")
 async def guard(request: Request, call_next):
     path = request.url.path
     if path.startswith("/api/") and path not in OPEN_PATHS:
-        if not auth.valid_token(request.cookies.get(auth.COOKIE)):
+        user = auth.current(request.cookies.get(auth.COOKIE))
+        if not user:
             return JSONResponse({"detail": "Inte inloggad"}, status_code=401)
-        legacy.touch()  # du använder WizzOS = du är här
+        request.scope["wizzos_user"] = user
+        if user["role"] != "admin" and not _limited_ok(user, request.method, path):
+            return JSONResponse({"detail": "Det här får bara den som sköter servern göra."}, status_code=403)
+        if user["id"] == "owner":
+            legacy.touch()  # du använder WizzOS = du är här
     # Enkelt skydd mot att andra sajter skickar formulär hit.
     if request.method not in ("GET", "HEAD") and path.startswith("/api/") \
             and request.headers.get("x-wizzos") != "1":
@@ -89,9 +109,29 @@ class Password(BaseModel):
     password: str
 
 
-def _login_response(data: dict, request: Request) -> JSONResponse:
+class LoginIn(BaseModel):
+    password: str
+    user: str = ""
+
+
+def _user(request: Request) -> dict:
+    return request.scope.get("wizzos_user") or users.owner()
+
+
+def _fs(request: Request):
+    """Familjemedlemmar ser bara sin egen mapp."""
+    u = _user(request)
+    if u["role"] == "admin":
+        return nullcontext()
+    root = users.folder_path(u)
+    if not root:
+        raise HTTPException(403, "Du har ingen egen mapp.")
+    return files.scoped(root)
+
+
+def _login_response(data: dict, request: Request, uid: str = "owner") -> JSONResponse:
     resp = JSONResponse(data)
-    resp.set_cookie(auth.COOKIE, auth.make_token(), max_age=auth.SESSION_DAYS * 86400,
+    resp.set_cookie(auth.COOKIE, auth.make_token(uid), max_age=auth.SESSION_DAYS * 86400,
                     httponly=True, samesite="strict",
                     secure=request.url.scheme == "https")
     return resp
@@ -99,8 +139,10 @@ def _login_response(data: dict, request: Request) -> JSONResponse:
 
 @app.get("/api/state")
 def state(request: Request):
-    return {"setup": not auth.has_password(),
+    has = auth.has_password()
+    return {"setup": not has,
             "logged_in": auth.valid_token(request.cookies.get(auth.COOKIE)),
+            "people": users.login_choices() if has else [],
             "version": __version__}
 
 
@@ -127,14 +169,80 @@ def welcome_done():
 
 
 @app.post("/api/login")
-def login(body: Password, request: Request):
+def login(body: LoginIn, request: Request):
     ip = request.client.host if request.client else "?"
     if auth.too_many_failures(ip):
         raise HTTPException(429, "För många försök. Vänta fem minuter.")
-    if not auth.check_password(body.password):
+    uid = body.user or "owner"
+    ok = auth.check_password(body.password) if uid == "owner" else users.check_password(uid, body.password)
+    if not ok:
         auth.note_failure(ip)
         raise HTTPException(401, "Fel lösenord.")
-    return _login_response({"ok": True}, request)
+    users.note_login(uid)
+    return _login_response({"ok": True}, request, uid)
+
+
+# ---------- familjekonton ----------
+
+@app.get("/api/me")
+def me(request: Request):
+    u = _user(request)
+    return {"id": u["id"], "name": u["name"], "role": u["role"], "emoji": u.get("emoji", ""),
+            "owner": u["id"] == "owner", "files": u["role"] == "admin" or bool(u.get("folder"))}
+
+
+@app.get("/api/me/apps")
+def me_apps(request: Request):
+    return {"apps": users.visible_apps(_user(request))}
+
+
+class MyPassword(BaseModel):
+    current: str
+    password: str
+
+
+@app.post("/api/me/password")
+def me_password(body: MyPassword, request: Request):
+    u = _user(request)
+    if u["id"] == "owner":
+        raise HTTPException(400, "Ägaren byter lösenord under Inställningar.")
+    if not users.check_password(u["id"], body.current):
+        raise HTTPException(400, "Nuvarande lösenord stämmer inte.")
+    users.update(u["id"], password=body.password)
+    return _login_response({"ok": True}, request, u["id"])
+
+
+class UserIn(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    password: str | None = None
+    apps: list[str] | None = None
+    emoji: str | None = None
+
+
+@app.get("/api/users")
+def users_list():
+    return {"users": users.listing(), "roles": users.ROLES}
+
+
+@app.post("/api/users")
+def users_create(body: UserIn):
+    return users.create(body.name or "", body.role or "family", body.password or "", body.apps, body.emoji or "")
+
+
+@app.put("/api/users/{uid}")
+def users_update(uid: str, body: UserIn, request: Request):
+    if uid == _user(request)["id"] and body.role and body.role != "admin":
+        raise HTTPException(400, "Du kan inte ta bort din egen admin-roll.")
+    return users.update(uid, body.name, body.role, body.apps, body.emoji, body.password)
+
+
+@app.delete("/api/users/{uid}")
+def users_delete(uid: str, request: Request):
+    if uid == _user(request)["id"]:
+        raise HTTPException(400, "Du kan inte ta bort dig själv.")
+    users.remove(uid)
+    return {"ok": True}
 
 
 @app.post("/api/logout")
@@ -151,6 +259,8 @@ class NewPassword(BaseModel):
 
 @app.post("/api/password")
 def change_password(body: NewPassword, request: Request):
+    if _user(request)["id"] != "owner":
+        raise HTTPException(403, "Bara ägaren kan byta ägarens lösenord.")
     if not auth.check_password(body.current):
         raise HTTPException(400, "Nuvarande lösenord stämmer inte.")
     if len(body.password) < 8:
@@ -646,90 +756,103 @@ class TextIn(BaseModel):
 
 
 @app.get("/api/files")
-def files_list(path: str = "/"):
-    return files.listing(path)
+def files_list(request: Request, path: str = "/"):
+    with _fs(request):
+        return files.listing(path)
 
 
 @app.get("/api/files/download")
-def files_download(path: str, inline: bool = False):
-    p = files.resolve(path)
-    if p.is_dir():
-        return StreamingResponse(files.zip_stream(p), media_type="application/zip",
-                                 headers={"Content-Disposition": _disposition("attachment", p.name + ".zip")})
-    if not p.is_file():
-        raise HTTPException(404, "Filen finns inte.")
-    show = files.safe_inline_type(p) if inline else None
-    headers = {"Content-Disposition": _disposition("inline" if show else "attachment", p.name),
-               # Visade filer får aldrig köra något i WizzOS.
-               "Content-Security-Policy": "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
-               "Cache-Control": "private, no-cache"}
-    return FileResponse(p, media_type=show or "application/octet-stream", headers=headers)
+def files_download(request: Request, path: str, inline: bool = False):
+    with _fs(request):
+        p = files.resolve(path)
+        if p.is_dir():
+            return StreamingResponse(files.zip_stream(p), media_type="application/zip",
+                                     headers={"Content-Disposition": _disposition("attachment", p.name + ".zip")})
+        if not p.is_file():
+            raise HTTPException(404, "Filen finns inte.")
+        show = files.safe_inline_type(p) if inline else None
+        headers = {"Content-Disposition": _disposition("inline" if show else "attachment", p.name),
+                   # Visade filer får aldrig köra något i WizzOS.
+                   "Content-Security-Policy": "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+                   "Cache-Control": "private, no-cache"}
+        return FileResponse(p, media_type=show or "application/octet-stream", headers=headers)
 
 
 @app.put("/api/files/upload")
 async def files_upload(request: Request, dir: str, name: str, overwrite: bool = False):
-    try:
-        up = files.Upload(dir, name, overwrite)
-    except FileExistsError:
-        raise HTTPException(409, f"{name} finns redan.")
-    try:
-        async for chunk in request.stream():
-            if chunk:
-                await asyncio.to_thread(up.write, chunk)
-    except BaseException:
-        up.abort()
-        raise
-    return up.finish()
+    with _fs(request):
+        try:
+            up = files.Upload(dir, name, overwrite)
+        except FileExistsError:
+            raise HTTPException(409, f"{name} finns redan.")
+        try:
+            async for chunk in request.stream():
+                if chunk:
+                    await asyncio.to_thread(up.write, chunk)
+        except BaseException:
+            up.abort()
+            raise
+        return up.finish()
 
 
 @app.post("/api/files/mkdir")
-def files_mkdir(body: MkdirIn):
-    return {"path": files.mkdir(body.path, body.name)}
+def files_mkdir(body: MkdirIn, request: Request):
+    with _fs(request):
+        return {"path": files.mkdir(body.path, body.name)}
 
 
 @app.post("/api/files/rename")
-def files_rename(body: RenameIn):
-    return {"path": files.rename(body.path, body.name)}
+def files_rename(body: RenameIn, request: Request):
+    with _fs(request):
+        return {"path": files.rename(body.path, body.name)}
 
 
 @app.post("/api/files/move")
-def files_move(body: MoveIn):
-    return {"count": files.move(body.paths, body.dest, body.as_copy)}
+def files_move(body: MoveIn, request: Request):
+    with _fs(request):
+        return {"count": files.move(body.paths, body.dest, body.as_copy)}
 
 
 @app.post("/api/files/delete")
-def files_delete(body: PathsIn):
-    return {"trash": files.delete(body.paths)}
+def files_delete(body: PathsIn, request: Request):
+    with _fs(request):
+        return {"trash": files.delete(body.paths)}
 
 
 @app.get("/api/files/text")
-def files_text(path: str):
-    return files.read_text(path)
+def files_text(path: str, request: Request):
+    with _fs(request):
+        return files.read_text(path)
 
 
 @app.put("/api/files/text")
-def files_text_save(body: TextIn):
-    return files.write_text(body.path, body.text, body.mtime)
+def files_text_save(body: TextIn, request: Request):
+    with _fs(request):
+        return files.write_text(body.path, body.text, body.mtime)
 
 
 @app.get("/api/trash")
-def trash_get():
-    return {"items": files.trash_list(), "days": files.TRASH_DAYS}
+def trash_get(request: Request):
+    with _fs(request):
+        return {"items": files.trash_list(), "days": files.TRASH_DAYS}
 
 
 @app.post("/api/trash/{tid}/restore")
-def trash_restore(tid: str):
-    return {"path": files.trash_restore(tid)}
+def trash_restore(tid: str, request: Request):
+    with _fs(request):
+        return {"path": files.trash_restore(tid)}
 
 
 @app.delete("/api/trash/{tid}")
-def trash_remove(tid: str):
-    return {"count": files.trash_delete(tid)}
+def trash_remove(tid: str, request: Request):
+    with _fs(request):
+        return {"count": files.trash_delete(tid)}
 
 
 @app.delete("/api/trash")
-def trash_empty():
-    return {"count": files.trash_delete(None)}
+def trash_empty(request: Request):
+    with _fs(request):
+        return {"count": files.trash_delete(None)}
 
 
 # ---------- serverkortet ----------

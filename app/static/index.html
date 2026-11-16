@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="WizzOS">
   <link rel="apple-touch-icon" href="/static/logo-192.png">
-  <link rel="stylesheet" href="/static/style.css?v=2.0.0">
+  <link rel="stylesheet" href="/static/style.css?v=2.1.0">
 </head>
 <body>
   <div id="bg" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -24,6 +24,7 @@
       <h1>WizzOS</h1>
       <p class="auth-tag">Din egen server. Enkelt.</p>
       <p id="auth-text">Logga in för att fortsätta.</p>
+      <div id="auth-people" class="auth-people hidden"></div>
       <input type="password" id="auth-pw" placeholder="Lösenord" autocomplete="current-password" required>
       <input type="password" id="auth-pw2" placeholder="Skriv lösenordet igen" class="hidden" autocomplete="new-password">
       <button class="btn primary big" type="submit" id="auth-btn">Logga in</button>
@@ -42,8 +43,9 @@
       <a href="#/files" data-nav="files"><svg><use href="#i-folder"/></svg><span>Filer</span></a>
       <a href="#/backup" data-nav="backup"><svg><use href="#i-shield"/></svg><span>Backup</span></a>
       <a href="#/trygghet" data-nav="trygghet"><svg><use href="#i-heart"/></svg><span>Trygghet</span></a>
+      <a href="#/me" data-nav="me" class="only-limited"><svg><use href="#i-gear"/></svg><span>Mitt konto</span></a>
       <a href="#/settings" data-nav="settings"><svg><use href="#i-gear"/></svg><span>Inställningar</span></a>
-      <div class="side-foot" style="margin-top:auto"><span id="ver"></span></div>
+      <div class="side-foot" style="margin-top:auto"><span id="whoami"></span><span id="ver"></span></div>
     </nav>
     <main id="view"></main>
   </div>
@@ -80,11 +82,12 @@
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2.2h8.4A1.5 1.5 0 0 1 21 8.7v9.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
     <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9zM3 7.5 12 12l9-4.5M12 12v9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
   </svg>
-  <script src="/static/app.js?v=2.0.0"></script>
-  <script src="/static/trygghet.js?v=2.0.0"></script>
-  <script src="/static/ailink.js?v=2.0.0"></script>
-  <script src="/static/search.js?v=2.0.0"></script>
-  <script src="/static/goals.js?v=2.0.0"></script>
-  <script src="/static/welcome.js?v=2.0.0"></script>
+  <script src="/static/app.js?v=2.1.0"></script>
+  <script src="/static/trygghet.js?v=2.1.0"></script>
+  <script src="/static/ailink.js?v=2.1.0"></script>
+  <script src="/static/search.js?v=2.1.0"></script>
+  <script src="/static/goals.js?v=2.1.0"></script>
+  <script src="/static/welcome.js?v=2.1.0"></script>
+  <script src="/static/family.js?v=2.1.0"></script>
 </body>
 </html>
