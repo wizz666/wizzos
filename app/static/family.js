@@ -57,6 +57,7 @@ const limitedPages = {
       <div class="settings"><div class="card"><h2>Byt lösenord</h2>
         <div class="grid2"><div><label for="mp0">Nuvarande</label><input type="password" id="mp0" autocomplete="current-password"></div>
         <div><label for="mp1">Nytt (minst 6 tecken)</label><input type="password" id="mp1" autocomplete="new-password"></div></div>
+        <label>Språk</label>${langPicker()}
         <div class="actions"><button class="btn" id="mout">Logga ut</button><button class="btn primary" id="mpw">Byt lösenord</button></div>
       </div></div>`;
     $("#mpw").onclick = async () => {

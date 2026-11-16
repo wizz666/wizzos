@@ -30,8 +30,8 @@ async function docCard() {
   box.innerHTML = `<h2>📄 Dokument</h2>
     <p class="hint" style="margin-top:-6px">WizzOS läser texten i dina dokument så att du kan söka i innehållet med <b>Ctrl K</b> – inte bara i filnamnen.
       Typer: ${d.types.map((t) => t.slice(1).toUpperCase()).join(", ")}. Inskannade papper utan text söks via Paperless.</p>
-    <div class="doc-stats"><div><b>${(ix.indexed || 0).toLocaleString("sv-SE")}</b><span>dokument sökbara</span></div>
-      <div><b>${(ix.no_text || 0).toLocaleString("sv-SE")}</b><span>utan text (inskannade?)</span></div>
+    <div class="doc-stats"><div><b>${(ix.indexed || 0).toLocaleString(loc())}</b><span>dokument sökbara</span></div>
+      <div><b>${(ix.no_text || 0).toLocaleString(loc())}</b><span>utan text (inskannade?)</span></div>
       <div><b>${ix.db_mb || 0} MB</b><span>index</span></div>
       <div><b>${ix.running ? "Pågår …" : ix.last ? esc(timeAgo(ix.last)) : "Inte än"}</b><span>${ix.running ? esc((ix.current || "").split("/").pop()) : "senast uppdaterat"}</span></div></div>
     <div class="actions" style="justify-content:flex-start"><button class="btn" id="docre">Uppdatera nu</button></div>
@@ -119,7 +119,7 @@ function finderDraw(r, web, pl) {
   } else webRows = [`<button class="fd-item" data-kind="store" data-key="wizzos/searxng"><span class="fd-emo">🔍</span><span><b>Sök även på webben – privat</b><small>Installera din egen sökmotor (SearXNG) från WizzOS-paketen</small></span><i>Installera …</i></button>`];
   const empty = !apps.length && !places.length && !files.length && !docs.length && !store.length && web && web.available && !(web.results || []).length && !(pl || []).length;
   box.innerHTML = sec("Mina appar", apps) + sec("WizzOS", places) + sec("I dokument", docs) + sec("I Paperless", plRows)
-    + sec(`Filnamn${r.index?.count ? ` <small>${r.index.count.toLocaleString("sv-SE")} filer i indexet</small>` : ""}`, files)
+    + sec(`Filnamn${r.index?.count ? ` <small>${r.index.count.toLocaleString(loc())} filer i indexet</small>` : ""}`, files)
     + sec("I appbutiken", store) + sec("Webben", webRows) + (empty ? `<div class="fd-hint">Inget hittades för "${esc(r.q)}".</div>` : "");
   $$("#fd-res .fd-item").forEach((el, i) => {
     el.onmouseenter = () => { finder.sel = i; finderMark(); };

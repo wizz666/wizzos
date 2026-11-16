@@ -299,6 +299,10 @@ def chat(messages: list[dict], app: str | None = None, extra: str | None = None)
         apps.app_dir(app)  # kontrollera namnet
     history = " ".join(m["content"] for m in msgs[:-1])
     ctx = build_context(msgs[-1]["content"], history, app, extra)
-    full = [{"role": "system", "content": SYSTEM_PROMPT + "\n\n# Aktuell information\n\n" + ctx}, *msgs]
+    from . import i18n
+    prompt = SYSTEM_PROMPT if i18n.current() == "sv" else SYSTEM_PROMPT + (
+        "\n\nIMPORTANT: The owner uses WizzOS in English. Always answer in simple, everyday English "
+        "(the server information below is in Swedish – translate as needed). Keep the action tags exactly as specified.")
+    full = [{"role": "system", "content": prompt + "\n\n# Aktuell information\n\n" + ctx}, *msgs]
     reply = complete(full, c)
     return {"reply": reply, "model": c["model"]}

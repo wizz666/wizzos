@@ -1,5 +1,12 @@
 # Ändringar
 
+## 2.2.0
+
+- **WizzOS på engelska** – välj Svenska eller English på inloggningen, under Inställningar → Språk eller under Mitt konto. Valet gäller webbläsaren.
+- Ägarens språkval blir också serverns språk: larm till mobilen, AI-hjälpen och AI-kopplingen svarar på det språket.
+- Appbutiken visar appbeskrivningarna på engelska när du valt engelska.
+- *English: WizzOS now has an English interface. Pick English on the login screen or under Settings → Language.*
+
 ## 2.1.0
 
 - **Familjekonton**: ge familj och vänner egna lösenord under Inställningar → Familj och gäster.

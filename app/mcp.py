@@ -629,6 +629,15 @@ BY_NAME = {t[0]: t for t in TOOLS}
 from . import approvals as _approvals  # noqa: E402
 _approvals.EXECUTORS.update({k: v[1] for k, v in APPROVAL.items()})
 
+def _instructions(key: dict) -> str:
+    from . import i18n
+    text = INSTRUCTIONS + f" Den här nyckeln har nivån: {LEVELS[key['level']]}."
+    if i18n.server_lang() == "en":
+        text += (" NOTE: the owner uses WizzOS in English – answer the user in plain English, even though "
+                 "tool results are in Swedish.")
+    return text
+
+
 INSTRUCTIONS = ("Du är kopplad till WizzOS, en hemmaserver. Svara på svenska med vanliga ord. "
                 "Börja med wizzos_status. Fråga alltid användaren innan du installerar, stoppar eller uppdaterar något. "
                 "Installera nya appar på prov (install_app_trial) så att inget blir kvar om användaren ångrar sig. "
@@ -665,7 +674,7 @@ def handle(msg: dict, kid: str, key: dict) -> dict | None:
             "protocolVersion": v if v in PROTOCOLS else PROTOCOLS[0],
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": f"wizzos-{alerts._server_name()}", "title": "WizzOS", "version": __version__},
-            "instructions": INSTRUCTIONS + f" Den här nyckeln har nivån: {LEVELS[key['level']]}."}}
+            "instructions": _instructions(key)}}
     if method == "ping":
         return {"jsonrpc": "2.0", "id": mid, "result": {}}
     if method == "tools/list":

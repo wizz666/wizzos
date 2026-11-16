@@ -2,10 +2,10 @@
    och "Vad kostar min server?". Laddas efter app.js och använder dess hjälpfunktioner. */
 "use strict";
 
-const kr = (n, d = 0) => Number(n || 0).toLocaleString("sv-SE", { maximumFractionDigits: d, minimumFractionDigits: d });
+const kr = (n, d = 0) => Number(n || 0).toLocaleString(loc(), { maximumFractionDigits: d, minimumFractionDigits: d });
 const LEVEL = { bad: "🔴", warn: "🟡", ok: "🟢" };
 const isPrivUrl = (u) => { try { const h = new URL(u).hostname; return /^(100\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|localhost)/.test(h) || /ts\.net$/.test(h) || (window.WIZZ_PRIVATE_DOMAIN && h.endsWith(window.WIZZ_PRIVATE_DOMAIN)); } catch { return true; } };
-const fmtDay = (t) => new Date(t * 1000).toLocaleDateString("sv-SE", { day: "numeric", month: "long", year: "numeric" });
+const fmtDay = (t) => new Date(t * 1000).toLocaleDateString(loc(), { day: "numeric", month: "long", year: "numeric" });
 const leftTxt = (t) => { const s = t - Date.now() / 1000; if (s <= 0) return "har gått ut"; const d = Math.floor(s / 86400); return d >= 2 ? `${d} dagar kvar` : s >= 3600 ? `${Math.floor(s / 3600)} timmar kvar` : `${Math.max(1, Math.floor(s / 60))} min kvar`; };
 
 async function shareBase() {

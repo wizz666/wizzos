@@ -63,7 +63,7 @@ async function aiLinkCard() {
         <div class="acts"><button class="btn danger" data-kr="${esc(k.id)}">Stäng av</button></div></div>`).join("")}</div>` : ""}
     <div class="actions" style="justify-content:flex-start"><button class="btn primary" id="aikadd">+ Koppla en AI</button><button class="btn" id="aiweb">🌐 Claude/ChatGPT i mobilen</button></div>
     ${d.diary.length ? `<details><summary>📓 AI-dagbok (${d.diary.length})</summary><div class="list" style="margin-top:8px">${d.diary.map((e) => `<div class="row"><div>
-        <div class="n">${e.ok ? "✅" : "⛔"} ${esc(e.text)}</div>
+        <div class="n">${e.ok ? "✅" : "⛔"} <span>${esc(e.text)}</span></div>
         <div class="m">${esc(fmtDate(e.time))} · ${esc(e.who)}${e.tool !== "—" ? ` · ${esc(e.tool)}` : ""}${Object.keys(e.args || {}).length ? ` · ${esc(Object.entries(e.args).map(([k, v]) => `${k}=${v}`).join(", "))}` : ""}</div></div></div>`).join("")}</div></details>` : ""}`;
   aiSwitch($("#ai-sw2"), d.enabled);
   $$("#ailink [data-kr]").forEach((b) => b.onclick = async () => {

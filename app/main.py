@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (__version__, ai, alerts, approvals, apps, auth, backup, card, config, cost, docindex, files, finder, goals, homeassistant, jobs,
+from . import (__version__, ai, alerts, approvals, apps, auth, backup, card, config, cost, docindex, files, finder, goals, homeassistant, jobs, i18n,
                legacy, mail, mcp, oauth, paperless, proxy, security, selfupdate, shares, snapshots,
                letter, move, nestward, store, system, trial, updater, users)
 
@@ -37,6 +37,7 @@ def _limited_ok(user: dict, method: str, path: str) -> bool:
 @app.middleware("http")
 async def guard(request: Request, call_next):
     path = request.url.path
+    i18n.set_request_lang(request.cookies.get("wz-lang"))
     if path.startswith("/api/") and path not in OPEN_PATHS:
         user = auth.current(request.cookies.get(auth.COOKIE))
         if not user:
@@ -89,7 +90,9 @@ async def startup():
     backup.start_scheduler()
     alerts.start_monitor()
     proxy.safe_apply()
-    missing = [s for s in config.load()["stores"] if not store.load_store(s["id"])]
+    # Saknas en butik – eller är den hämtad före 2.2 (utan engelska texter) – hämta den.
+    missing = [s for s in config.load()["stores"]
+               if not (d := store.load_store(s["id"])) or (d["apps"] and "en" not in d["apps"][0])]
     if missing:
         refresh_job(missing)
 
@@ -311,6 +314,7 @@ def store_app(key: str):
     if not a:
         raise HTTPException(404, "Appen hittades inte.")
     form = apps.install_form(a["compose"], a["name"])
+    a = {k: v for k, v in store.localized(a).items() if k != "en"}
     return {**a, "form": form, "supported": not a["architectures"] or apps.arch() in a["architectures"]}
 
 
@@ -1035,6 +1039,7 @@ class SettingsIn(BaseModel):
     puid: str | None = None
     pgid: str | None = None
     bind_ip: str | None = None
+    language: str | None = None
 
 
 @app.get("/api/settings")
@@ -1051,6 +1056,8 @@ def put_settings(body: SettingsIn):
     for k in ("puid", "pgid"):
         if k in changes and not changes[k].isdigit():
             raise HTTPException(400, "PUID/PGID ska vara siffror.")
+    if "language" in changes and changes["language"] not in i18n.LANGS:
+        raise HTTPException(400, "Okänt språk.")
     data = config.public(config.update(**changes))
     proxy.safe_apply()
     return data

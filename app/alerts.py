@@ -87,6 +87,9 @@ def send(title: str, message: str, priority: int = 4, tags: str = "warning", c: 
          actions: list | None = None, click: str = "") -> None:
     """Skicka direkt (utan dubblettskydd). Fel tas upp som exception.
     actions = ntfy-knappar i notisen (t.ex. Godkänn/Neka)."""
+    from . import i18n
+    lang = i18n.server_lang()
+    title, message = i18n.tr(title, lang), i18n.tr(message, lang)
     c = c or cfg()
     sent = False
     errors = []

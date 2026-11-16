@@ -27,7 +27,7 @@ function toast(text, kind = "") {
 
 const fmtBytes = (b) => { const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; while (b >= 1024 && i < 4) { b /= 1024; i++; } return `${b.toFixed(i > 2 ? 1 : 0)} ${u[i]}`; };
 const fmtUptime = (s) => { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`; };
-const greeting = () => { const h = new Date().getHours(); return h < 5 ? "God natt" : h < 10 ? "God morgon" : h < 17 ? "Hej" : h < 22 ? "God kväll" : "God natt"; };
+const greeting = () => { const h = new Date().getHours(); return t(h < 5 ? "God natt" : h < 10 ? "God morgon" : h < 17 ? "Hej" : h < 22 ? "God kväll" : "God natt"); };
 const STATUS = { running: "Igång", partial: "Delvis igång", stopped: "Stoppad", restarting: "Startar om", exited: "Stoppad", created: "Skapad", paused: "Pausad" };
 
 function icon(url, title, cls = "ico") {
@@ -143,6 +143,7 @@ function showAuth(setup) {
   box.classList.toggle("hidden", !people.length);
   box.innerHTML = people.length ? `<p class="hint">Vem är du?</p><div class="who-row">${people.map((p) => `<button type="button" class="who ${p.id === authUser ? "on" : ""}" data-u="${esc(p.id)}"><span>${esc(p.emoji || p.name.charAt(0))}</span>${esc(p.name)}</button>`).join("")}</div>` : "";
   $$("[data-u]", box).forEach((b) => b.onclick = () => { authUser = b.dataset.u; $$("[data-u]", box).forEach((x) => x.classList.toggle("on", x === b)); $("#auth-pw").focus(); });
+  const al = $("#auth-lang"); if (al) al.innerHTML = langPicker();
   $("#auth-pw").focus();
 }
 let authUser = "";
@@ -259,7 +260,7 @@ const pages = {
       hs.apps = d.apps; drawMood(hs); drawOnboard(hs);
       $("#removed").innerHTML = rem.length ? `<h2>Nyligen borttagna <span class="count">${rem.length}</span></h2>
         <div class="card list">${rem.map((r) => `<div class="row"><div><div class="n">${esc(r.title)}</div>
-          <div class="m">Borttagen ${esc(timeAgo(r.removed))} · kan fås tillbaka till ${esc(new Date(r.expires * 1000).toLocaleDateString("sv-SE"))}</div></div>
+          <div class="m">Borttagen ${esc(timeAgo(r.removed))} · kan fås tillbaka till ${esc(new Date(r.expires * 1000).toLocaleDateString(loc()))}</div></div>
           <div class="acts"><button class="btn" data-back="${esc(r.name)}" data-sid="${esc(r.snapshot)}" data-title="${esc(r.title)}">↶ Få tillbaka</button></div></div>`).join("")}</div>` : "";
       $$("#removed [data-back]").forEach((b) => b.onclick = () => undoTo(b.dataset.back, b.dataset.sid, b.dataset.title, loadApps));
       $("#appcount").textContent = d.apps.length;
@@ -446,6 +447,8 @@ const pages = {
           <div class="actions"><button class="btn primary" id="save">Spara</button></div>
         </div>
 
+        <div class="card"><h2>🌐 Språk</h2><p class="hint" style="margin-top:-6px">Gäller den här webbläsaren.</p>${langPicker()}</div>
+
         <div class="card" id="famcard"><h2>👪 Familj och gäster</h2><p class="hint">Laddar …</p></div>
 
         <div class="card" id="selfupd"><h2>⬆️ WizzOS</h2><p class="hint">Laddar …</p></div>
@@ -464,7 +467,7 @@ const pages = {
           </div>
           <label for="alw">Webhook (valfritt)</label><input id="alw" value="${esc(al.webhook_url)}" placeholder="https://…/api/webhook/…">
           <div class="actions"><button class="btn" id="altest">Skicka testlarm</button><button class="btn primary" id="alsave">Spara</button></div>
-          ${al.history.length ? `<details><summary>Senaste händelser (${al.history.length})</summary><div class="list" style="margin-top:8px">${al.history.map((h) => `<div class="row"><div><div class="n">${h.kind === "problem" ? "⚠️" : h.kind === "löst" ? "✅" : "ℹ️"} ${esc(h.title)}</div><div class="m">${esc(fmtDate(h.time))} · ${esc(h.message)}</div></div></div>`).join("")}</div></details>` : ""}
+          ${al.history.length ? `<details><summary>Senaste händelser (${al.history.length})</summary><div class="list" style="margin-top:8px">${al.history.map((h) => `<div class="row"><div><div class="n">${h.kind === "problem" ? "⚠️" : h.kind === "löst" ? "✅" : "ℹ️"} <span>${esc(h.title)}</span></div><div class="m">${esc(fmtDate(h.time))} · <span>${esc(h.message)}</span></div></div></div>`).join("")}</div></details>` : ""}
         </div>
 
         <div class="card"><h2>🌙 Nattliga uppdateringar ${up.config.enabled ? '<span class="badge ok">På</span>' : '<span class="badge">Av</span>'}</h2>
@@ -1012,10 +1015,10 @@ const SV_WEEKDAY_FMT = { weekday: "long", day: "numeric", month: "long" };
 function isoWeek(d) { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day); const y = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return Math.ceil(((t - y) / 86400000 + 1) / 7); }
 function tickClock() {
   const n = new Date();
-  const hm = n.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
-  const date = n.toLocaleDateString("sv-SE", SV_WEEKDAY_FMT);
+  const hm = n.toLocaleTimeString(loc(), { hour: "2-digit", minute: "2-digit" });
+  const date = n.toLocaleDateString(loc(), SV_WEEKDAY_FMT);
   const t = $("#clk-t"); if (t) { t.textContent = hm; $("#clk-s").textContent = String(n.getSeconds()).padStart(2, "0"); $("#clk-d").textContent = `${date[0].toUpperCase()}${date.slice(1)} · vecka ${isoWeek(n)}`; }
-  const st = $("#sc-t"); if (st) { st.textContent = hm; $("#sc-d").textContent = n.toLocaleDateString("sv-SE", { weekday: "short", day: "numeric", month: "short" }); }
+  const st = $("#sc-t"); if (st) { st.textContent = hm; $("#sc-d").textContent = n.toLocaleDateString(loc(), { weekday: "short", day: "numeric", month: "short" }); }
   if (t && n.getSeconds() === 0) $("#greet").textContent = greeting();
 }
 
@@ -1259,7 +1262,7 @@ function showMoveCode(code) {
   $("#mvcp", body).onclick = async () => { try { await navigator.clipboard.writeText(code); toast("Kopierad", "good"); } catch { ta.select(); document.execCommand("copy"); toast("Kopierad", "good"); } };
   $("#mvdl", body).onclick = () => {
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([`WizzOS flyttkod – ${new Date().toLocaleString("sv-SE")}\nBehåll flyttlösenordet separat.\n\n${code}\n`], { type: "text/plain" }));
+    a.href = URL.createObjectURL(new Blob([`WizzOS flyttkod – ${new Date().toLocaleString(loc())}\nBehåll flyttlösenordet separat.\n\n${code}\n`], { type: "text/plain" }));
     a.download = `wizzos-flyttkod-${new Date().toISOString().slice(0, 10)}.txt`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
 }
@@ -1450,7 +1453,7 @@ function timeAgo(t) {
   if (s < 86400) return `för ${Math.floor(s / 3600)} h sedan`;
   const d = Math.floor(s / 86400); return d === 1 ? "i går" : `för ${d} dagar sedan`;
 }
-const fmtDate = (t) => new Date(t * 1000).toLocaleString("sv-SE", { dateStyle: "medium", timeStyle: "short" });
+const fmtDate = (t) => new Date(t * 1000).toLocaleString(loc(), { dateStyle: "medium", timeStyle: "short" });
 
 async function undoTo(name, sid, title, reload) {
   const ok = await confirmBox(`Återställ ${title}?`, "Appen blir exakt som den var vid den tidpunkten – inställningar, data och version. Nuläget sparas först, så du kan ångra även det här.", "Återställ");
@@ -1599,9 +1602,9 @@ function md(text) {
 }
 
 const AI_ACTIONS = {
-  "installera": (v) => `Installera ${v.split("/").pop()}`, "öppna": (v) => `Öppna ${v}`, "starta": (v) => `Starta ${v}`,
-  "stoppa": (v) => `Stoppa ${v}`, "starta-om": (v) => `Starta om ${v}`, "uppdatera": (v) => `Uppdatera ${v}`,
-  "logg": (v) => `Visa loggen för ${v}`, "ångra": (v) => `Ångra – ${v}`, "backup": (v) => `Backup av ${v}`,
+  "installera": (v) => t("Installera {a}", { a: v.split("/").pop() }), "öppna": (v) => t("Öppna {a}", { a: v }), "starta": (v) => t("Starta {a}", { a: v }),
+  "stoppa": (v) => t("Stoppa {a}", { a: v }), "starta-om": (v) => t("Starta om {a}", { a: v }), "uppdatera": (v) => t("Uppdatera {a}", { a: v }),
+  "logg": (v) => t("Visa loggen för {a}", { a: v }), "ångra": (v) => t("Ångra – {a}", { a: v }), "backup": (v) => t("Backup av {a}", { a: v }),
 };
 
 function aiRenderReply(text) {
@@ -1646,11 +1649,11 @@ function aiDraw() {
   }
   const chips = ["Hur mår servern?", "Är backupen i ordning?", "Vilken app passar för mina filmer?", "Vad kan jag göra med WizzOS?"];
   box.innerHTML = ai.messages.length ? ai.messages.map((m) => m.role === "user"
-    ? `<div class="ai-msg me">${esc(m.content)}</div>`
-    : `<div class="ai-msg bot">${aiRenderReply(m.content)}</div>`).join("") + (ai.busy ? `<div class="ai-msg bot"><span class="dots"><i></i><i></i><i></i></span></div>` : "")
+    ? `<div class="ai-msg me" translate="no">${esc(m.content)}</div>`
+    : `<div class="ai-msg bot" translate="no">${aiRenderReply(m.content)}</div>`).join("") + (ai.busy ? `<div class="ai-msg bot"><span class="dots"><i></i><i></i><i></i></span></div>` : "")
     : `<div class="ai-empty"><div class="ai-big">✨</div><p>Hej! Jag kan förklara vad som händer på servern, tolka loggar och tipsa om appar. Jag gör inget utan att du trycker.</p>
       <div class="ai-chips">${chips.map((c) => `<button class="chip" data-q="${esc(c)}">${esc(c)}</button>`).join("")}</div></div>`;
-  $$("[data-q]", box).forEach((b) => b.onclick = () => aiAsk(b.dataset.q));
+  $$("[data-q]", box).forEach((b) => b.onclick = () => aiAsk(t(b.dataset.q)));
   $$("[data-ai-a]", box).forEach((b) => b.onclick = () => aiDoAction(b.dataset.aiA, b.dataset.aiV));
   box.scrollTop = box.scrollHeight;
 }
@@ -1732,6 +1735,7 @@ async function startApp() {
 window.addEventListener("hashchange", () => { closeModal(); route(); });
 
 (async () => {
+  await window.I18N_READY;
   try {
     const s = await api("/api/state");
     window.WIZZ_VERSION = s.version; $("#ver").textContent = `v${s.version}`; window.WIZZ_PEOPLE = s.people || [];

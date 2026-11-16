@@ -23,6 +23,15 @@ GH_REPO = re.compile(r"https?://github\.com/([^/]+)/([^/#?]+?)(?:\.git)?/?(?:tre
 UA = {"User-Agent": "WizzOS-appstore"}
 
 _cache: dict[str, dict] = {}
+EN = ("en_US", "en_GB", "en_us", "en", "sv_SE")
+
+
+def localized(app: dict) -> dict:
+    """Byt till engelska texter om den som frågar använder engelska."""
+    from . import i18n
+    if i18n.current() == "en" and app.get("en"):
+        return {**app, **{k: v for k, v in app["en"].items() if v}}
+    return app
 
 
 def pick(value, prefer=("sv_SE", "en_US", "en_GB", "en_us", "en")) -> str:
@@ -66,6 +75,9 @@ def parse_compose(text: str, store_id: str, folder: str) -> dict | None:
         "tagline": pick(x.get("tagline")),
         "description": pick(x.get("description")),
         "tips": pick((x.get("tips") or {}).get("before_install")) if isinstance(x.get("tips"), dict) else "",
+        "en": {"title": pick(x.get("title"), EN) or folder, "tagline": pick(x.get("tagline"), EN),
+               "description": pick(x.get("description"), EN),
+               "tips": pick((x.get("tips") or {}).get("before_install"), EN) if isinstance(x.get("tips"), dict) else ""},
         "icon": str(x.get("icon") or ""),
         "thumbnail": str(x.get("thumbnail") or ""),
         "screenshots": [str(s) for s in shots][:6],
@@ -206,5 +218,6 @@ def find(stores: list[dict], key: str) -> dict | None:
 
 def summary(app: dict) -> dict:
     """Det som listan i butiken behöver (utan compose-texten)."""
+    app = localized(app)
     return {k: app[k] for k in ("key", "store", "name", "title", "tagline", "icon",
                                 "category", "developer", "architectures")}

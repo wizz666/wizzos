@@ -31,6 +31,7 @@ Kör samma rad igen för att uppdatera manuellt. Normalt behövs det inte: **Wiz
 - **Appbutik** – hundratals appar från CasaOS-butikerna (och fler du lägger till).
 - **Sök i allt** (Ctrl K) – appar, inställningar, filnamn, innehållet i dokument och webben via din egen sökmotor.
 - **Filer** – bläddra, ladda upp, dela med länkar som slutar fungera av sig själva.
+- **Svenska eller engelska** – välj språk på inloggningen eller under Inställningar.
 - **Familjekonton** – familj och gäster får egna lösenord, ser bara apparna du väljer, och familjen får en egen mapp.
 
 **Trygghet**
@@ -70,7 +71,7 @@ Data ligger i `/DATA` (samma som CasaOS): `/DATA/AppData/<app>` för apparnas da
 
 ### In English
 
-WizzOS is a self-hosted home server panel (Swedish UI) with a safety net: try apps before keeping them, undo points before every change, verified encrypted backups, nightly updates that roll back on failure, goal-based app packages, full-text search, an AI link (MCP) with phone approvals, plain-language security checks and a "dead man's switch" letter. Install on Debian/Ubuntu with the command above.
+WizzOS is a self-hosted home server panel (Swedish and English UI) with a safety net: try apps before keeping them, undo points before every change, verified encrypted backups, nightly updates that roll back on failure, goal-based app packages, full-text search, an AI link (MCP) with phone approvals, plain-language security checks and a "dead man's switch" letter. Install on Debian/Ubuntu with the command above.
 
 ## Licens
 

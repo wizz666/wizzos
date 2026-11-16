@@ -751,3 +751,9 @@ body.limited .side a[data-nav="settings"], body.limited #side-search, body.no-fi
 .app-check .ico, .app-check .ico-fallback { width: 24px; height: 24px; border-radius: 6px; flex: none; font-size: 12px; }
 .app-check span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-check:has(input:checked) { border-color: var(--accent); background: var(--card-hi); }
+
+/* språkväljare */
+.lang-pick{display:inline-flex;gap:4px;padding:3px;border-radius:999px;background:var(--card2,rgba(255,255,255,.06))}
+.lang-pick button{border:0;background:none;color:inherit;font:inherit;font-size:.85rem;padding:5px 12px;border-radius:999px;cursor:pointer;opacity:.75}
+.lang-pick button.on{background:var(--accent,#7c6cff);color:#fff;opacity:1}
+#auth-lang{display:flex;justify-content:center;margin:10px 0 2px}
