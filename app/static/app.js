@@ -280,7 +280,7 @@ const pages = {
           ${!a.trial && upd.available[a.name] ? `<span class="trial-tag new-tag">🆕 Ny version</span>` : ""}
           ${icon(a.icon, a.title)}
           <div class="t">${esc(a.title)}</div>
-          <div class="st"><span class="dot ${esc(a.status)}"></span>${STATUS[a.status] || esc(a.status)}</div>
+          <div class="st">${a.asleep ? '<span class="dot paused"></span>💤 Sover' : `<span class="dot ${esc(a.status)}"></span>${STATUS[a.status] || esc(a.status)}`}</div>
         </div>`).join("") + `<a class="card tile add" href="#/store"><svg><use href="#i-plus"/></svg><div class="t">Lägg till app</div></a>`;
       $$("#apps .tile[data-name]").forEach((el) => {
         const a = d.apps.find((x) => x.name === el.dataset.name);
@@ -321,6 +321,7 @@ const pages = {
     view.innerHTML = `
       <div class="head fade-in"><div><h1>Appbutik</h1><p id="storeinfo">Laddar …</p></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="migrate">📦 Flytta in från Unraid</button>
           <button class="btn" id="custom"><svg><use href="#i-box"/></svg>Egen app</button>
           <button class="btn" id="refresh"><svg><use href="#i-refresh"/></svg>Uppdatera listan</button></div></div>
       <div class="store-hero fade-in"><div class="sh-ico">🧪</div><div><b>Osäker på en app? Prova först.</b>
@@ -333,6 +334,7 @@ const pages = {
       watchJob(r.job, { title: "Uppdaterar appbutiker", onDone: () => { storeState.data = null; route(); } });
     };
     $("#custom").onclick = customApp;
+    $("#migrate").onclick = migrateUnraid;
     if (!storeState.data) storeState.data = await api("/api/store");
     const d = storeState.data;
     const total = d.apps.length;
@@ -378,6 +380,7 @@ const pages = {
           <p>${lt ? `Senaste återställningstest ${esc(timeAgo(lt.time))}: ${lt.ok ? "appen startade med den återställda datan ✓" : "<b>misslyckades</b>"}` : "Varje natt återställs en app på prov i en sandlåda – så vet du att backupen faktiskt fungerar."}</p>
         </div>
       </div>
+      <div id="safety"></div>
       <h2>Appar <span class="count">${d.apps.length}</span></h2>
       <div class="card list">${d.apps.map((a) => `<div class="row bk-row">
           <div class="bk-app">${icon(a.icon, a.title)}<div><div class="n">${esc(a.title)}</div>
@@ -407,6 +410,7 @@ const pages = {
         { label: "Återställ från backup …", run: () => restoreFromBackup(a.name, a.title, reload) },
       ]);
     });
+    safetyCard($("#safety"), reload);
     // Appar som finns i backupen men inte här (t.ex. ny server)
     api("/api/backup/available").then((av) => {
       const missing = av.filter((x) => !x.installed);
@@ -967,11 +971,32 @@ function appUrl(a) {
   return `${scheme}://${location.hostname}:${a.port}${idx}`;
 }
 function openApp(a) {
+  if (a.asleep) {
+    api(`/api/apps/${a.name}/wake`, { method: "POST" }).catch(() => {});
+    a.asleep = false;
+    if (!a.url) { toast(`💤 ${a.title} vaknar – öppnas om några sekunder …`); setTimeout(() => openApp(a), 7000); return; }
+  }
   if (a.url) { window.open(a.url, "_blank", "noopener"); return; }
   const u = appUrl(a);
   if (!u) { toast("Appen har inget webbgränssnitt."); return; }
   if (a.scheme === "https") toast("Varnar webbläsaren för certifikatet? Välj Avancerat → Fortsätt. Appen använder ett eget certifikat.");
   window.open(u, "_blank", "noopener");
+}
+
+function sleepMenu(anchor, a, reload) {
+  const set = async (m) => {
+    try {
+      await api(`/api/apps/${a.name}/sleep`, { method: "POST", body: { minutes: m } });
+      toast(m ? `${a.title} somnar efter ${m >= 60 ? m / 60 + " h" : m + " min"} utan användning och vaknar när någon öppnar den` : `${a.title} är alltid vaken`, "good");
+      reload();
+    } catch (e) { toast(e.message, "bad"); }
+  };
+  openMenu(anchor, [
+    { label: "Sov efter 30 min utan användning", run: () => set(30) },
+    { label: "Sov efter 1 timme", run: () => set(60) },
+    { label: "Sov efter 3 timmar", run: () => set(180) },
+    { label: "Alltid vaken", run: () => set(0) },
+  ]);
 }
 
 function appMenu(anchor, a, reload) {
@@ -984,12 +1009,14 @@ function appMenu(anchor, a, reload) {
   };
   openMenu(anchor, [
     { label: "Öppna", run: () => openApp(a) },
-    a.status === "running" ? { label: "Stoppa", run: () => act("stop") } : { label: "Starta", run: () => act("start") },
+    a.asleep ? { label: "⏰ Väck nu", run: async () => { try { await api(`/api/apps/${a.name}/wake`, { method: "POST" }); toast(`${a.title} vaknar …`, "good"); setTimeout(reload, 6000); } catch (e) { toast(e.message, "bad"); } } }
+      : a.status === "running" ? { label: "Stoppa", run: () => act("stop") } : { label: "Starta", run: () => act("start") },
     { label: "Starta om", run: () => act("restart") },
     { label: "Uppdatera (säkert)", run: () => act("update") },
     { label: a.no_auto_update ? "🌙 Uppdatera automatiskt igen" : "🌙 Uppdatera inte automatiskt", run: async () => {
       try { await api(`/api/apps/${a.name}/autoupdate`, { method: "POST", body: { on: !!a.no_auto_update } }); toast(a.no_auto_update ? `${a.title} uppdateras automatiskt igen` : `${a.title} hoppas över på natten`, "good"); reload(); } catch (e) { toast(e.message, "bad"); }
     } },
+    ...(a.trial ? [] : [{ label: a.sleep_after ? `💤 Sover efter ${a.sleep_after >= 60 ? a.sleep_after / 60 + " h" : a.sleep_after + " min"} utan användning` : "💤 Låt appen sova när den inte används", run: () => sleepMenu(anchor, a, reload) }]),
     "-",
     ...(a.url ? [{ label: "📱 Öppna i mobilen", run: () => phoneModal(a.url, a.title, a.icon) }] : []),
     ...(a.store_key === "wizzos/searxng" ? [{ label: "🔍 Gör till standardsökmotor", run: () => searchEngineModal(a) }] : []),
@@ -1568,6 +1595,91 @@ async function appDetails(key) {
   };
   $("#inst", body).onclick = () => doInstall(0);
   $("#trial", body).onclick = () => doInstall(parseInt($("#trm", body).value, 10));
+}
+
+async function safetyCard(el, reload) {
+  if (!el) return;
+  let r;
+  try { r = await api("/api/safety"); } catch { return; }
+  const dot = { ok: "🟢", warn: "🟡", bad: "🔴" };
+  const dr = r.drill;
+  const mins = dr ? Math.max(1, Math.round((dr.estimate_secs || 0) / 60)) : 0;
+  el.innerHTML = `<h2>🛟 Hur säkra är mina filer?</h2>
+    <div class="card list">
+      ${r.rows.map((x) => `<div class="row"><div><div class="n">${dot[x.level]} ${esc(x.label)}${x.path ? ` <span class="hint">${esc(x.path)}</span>` : ""}</div>
+        <div class="m">${x.copies} ${x.copies === 1 ? "kopia" : "kopior"}${x.outside ? " · en utanför huset" : ""}${x.verified ? " · provåterställd ✓" : ""}${x.size ? ` · ${fmtBytes(x.size)}` : ""} – ${esc(x.why)}</div></div>
+        ${x.path ? `<div class="acts"><button class="icon-btn" data-sfrm="${esc(x.path)}" aria-label="Ta bort ur backupen" title="Ta bort ur backupen">✕</button></div>` : ""}</div>`).join("")}
+      <div class="row"><div style="flex:1"><div class="n">➕ Lägg till en viktig mapp</div>
+        <div class="m">T.ex. dina foton eller dokument. Den följer med i nattens backup.</div>
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap"><input id="sfpath" list="sfsug" placeholder="/DATA/Foton" style="max-width:280px">
+        <datalist id="sfsug">${(r.suggest || []).map((p) => `<option value="${esc(p)}">`).join("")}</datalist>
+        <button class="btn" id="sfadd">Lägg till</button></div></div></div>
+    </div>
+    <div class="card fade-in" style="margin-top:12px;padding:14px 16px"><div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <div><b>🧯 Brandövning</b><div class="m">${dr ? (dr.ok ? `${esc(timeAgo(dr.time))}: allt kunde återställas. <b>Går servern sönder är du igång igen på ungefär ${mins} min.</b>`
+        : `${esc(timeAgo(dr.time))}: <b style="color:var(--bad)">något gick inte att återställa</b> – ${esc([...dr.apps.filter((a) => !a.ok).map((a) => a.name), ...dr.folders.filter((f) => !f.ok).map((f) => f.path)].join(", "))}.`)
+        : "En gång i månaden återställer WizzOS allt på prov – appar i en sandlåda och stickprov av dina filer – utan att röra originalen."}</div></div>
+      <button class="btn" id="sfdrill">Kör brandövning nu</button></div></div>`;
+  $("#sfadd", el).onclick = async () => {
+    try { await api("/api/safety/folders", { method: "POST", body: { path: $("#sfpath", el).value } }); toast("Mappen följer med i nattens backup", "good"); reload(); } catch (e) { toast(e.message, "bad"); }
+  };
+  el.querySelectorAll("[data-sfrm]").forEach((b) => b.onclick = async () => {
+    if (!confirm(`Sluta säkerhetskopiera ${b.dataset.sfrm}? Backuper som redan finns ligger kvar tills de gallras.`)) return;
+    try { await api(`/api/safety/folders?path=${encodeURIComponent(b.dataset.sfrm)}`, { method: "DELETE" }); reload(); } catch (e) { toast(e.message, "bad"); }
+  });
+  $("#sfdrill", el).onclick = async () => {
+    try { const j = await api("/api/safety/drill", { method: "POST" }); watchJob(j.job, { title: "Brandövning", onDone: reload }); } catch (e) { toast(e.message, "bad"); }
+  };
+}
+
+function migrateUnraid() {
+  const body = openModal(`<h3>📦 Flytta in från Unraid</h3>
+    <p class="hint">WizzOS gör om dina Unraid-appar till WizzOS-appar – samma image, portar och inställningar. Unraids mappar byts mot WizzOS egna (<code>/mnt/user/appdata/…</code> → <code>/DATA/AppData/…</code>).</p>
+    <ol class="hint" style="margin:.4rem 0 .8rem 1.1rem;line-height:1.6">
+      <li>Öppna utdelningen <b>flash</b> på Unraid-servern (t.ex. <code>\\TOWER\flash</code>) och gå till <code>config/plugins/dockerMan/templates-user</code>.</li>
+      <li>Markera filerna <b>my-….xml</b> för apparna du vill flytta (eller lägg alla i en zip-fil).</li>
+      <li>Välj dem här. Inget installeras förrän du trycker på Installera vid en app.</li></ol>
+    <input type="file" id="mf" accept=".xml,.zip" multiple>
+    <div id="mres" style="margin-top:12px"></div>
+    <div class="actions"><button class="btn" data-close>Stäng</button></div>`);
+  $("#mf", body).onchange = async (ev) => {
+    const res = $("#mres", body);
+    res.innerHTML = `<p class="hint">Läser mallarna …</p>`;
+    try {
+      const files = await Promise.all([...ev.target.files].map((f) => new Promise((ok, bad) => {
+        const r = new FileReader();
+        r.onload = () => ok({ name: f.name, data: String(r.result).split(",")[1] || "" });
+        r.onerror = bad; r.readAsDataURL(f);
+      })));
+      const r = await api("/api/migrate/unraid/scan", { method: "POST", body: { files } });
+      res.innerHTML = r.items.map((it, i) => it.error ? `<div class="card" style="padding:10px;margin:8px 0">⚠️ <b>${esc(it.file)}</b>: ${esc(it.error)}</div>` : `
+        <div class="card" style="padding:12px;margin:8px 0">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            📦
+            <b>${esc(it.title)}</b><span class="hint">${esc(it.image)}${it.port ? ` · port ${esc(it.port)}` : ""}</span></div>
+          ${it.exists ? `<p class="hint">Det finns redan en app med namnet <b>${esc(it.name)}</b> – välj ett annat namn.</p>` : ""}
+          ${it.secrets.length ? `<p class="hint">🔒 ${it.secrets.length} lösenord/nycklar följer med men visas inte.</p>` : ""}
+          ${it.warnings.map((w) => `<p class="hint">⚠️ ${esc(w)}</p>`).join("")}
+          ${it.folders.length ? `<details><summary class="hint">📁 ${it.folders.length} mappar – så flyttar du innehållet</summary>
+            <p class="hint">Stoppa appen på Unraid först. Kör sedan detta på den nya servern (byt <code>TOWER</code> mot Unraid-serverns adress):</p>
+            <pre style="white-space:pre-wrap;font-size:.8rem">${it.folders.map((f) => esc(`rsync -a --info=progress2 root@TOWER:"${f.from}/" "${f.to}/"`)).join("\n")}</pre></details>` : ""}
+          <details><summary class="hint">Visa inställningarna (docker-compose)</summary><pre style="white-space:pre-wrap;font-size:.8rem">${esc(it.compose)}</pre></details>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+            <label class="hint" for="mn${i}">Namn</label><input id="mn${i}" value="${esc(it.name)}" style="max-width:220px">
+            <button class="btn primary" data-mi="${i}">Installera</button></div>
+        </div>`).join("");
+      res.querySelectorAll("[data-mi]").forEach((btn) => {
+        btn.onclick = async () => {
+          const it = r.items[+btn.dataset.mi];
+          try {
+            const j = await api("/api/migrate/unraid/install", { method: "POST", body: { scan: r.scan, file: it.file, name: $(`#mn${btn.dataset.mi}`, body).value } });
+            btn.disabled = true; btn.textContent = "Installeras …";
+            watchJob(j.job, { title: `Flyttar in ${it.title}` });
+          } catch (e) { toast(e.message, "bad"); }
+        };
+      });
+    } catch (e) { res.innerHTML = ""; toast(e.message, "bad"); }
+  };
 }
 
 function customApp() {

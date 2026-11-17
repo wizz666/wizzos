@@ -192,7 +192,20 @@ def render() -> str:
                          f"\t\t\ttransport http {{\n\t\t\t\ttls_insecure_skip_verify\n\t\t\t}}\n\t\t}}\n\t}}")
         else:
             lines.append(f"\thandle @a_{sub.replace('-', '_')} {{\n\t\treverse_proxy {target}\n\t}}")
-    lines += ["\thandle {", '\t\trespond "Det finns ingen app på den här adressen." 404', "\t}", "}"]
+    lines += ["\thandle {", '\t\trespond "Det finns ingen app på den här adressen." 404', "\t}"]
+    # Svarar inte appen (t.ex. för att den sover)? Låt WizzOS visa väckningssidan och starta den.
+    from . import sleep
+    lines += ["\thandle_errors 502 503 504 {",
+              f"\t\t@app_err not host {domain}",
+              "\t\thandle @app_err {",
+              "\t\t\trewrite * /__wake",
+              f"\t\t\treverse_proxy {wizz_host}:{os.environ.get('WIZZOS_PORT', '8899')} {{",
+              f"\t\t\t\theader_up X-Wizzos-Wake {sleep.wake_key()}",
+              "\t\t\t\theader_up X-Wizzos-Host {http.request.host}",
+              "\t\t\t\theader_up X-Wizzos-Uri {http.request.orig_uri}",
+              "\t\t\t}",
+              "\t\t}",
+              "\t}", "}"]
     return "\n".join(lines) + "\n"
 
 

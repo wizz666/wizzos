@@ -272,7 +272,7 @@ class CapExceeded(RuntimeError):
     pass
 
 
-def _cap_check(name: str, paths: list[str], log) -> None:
+def _cap_check(name: str, paths: list[str], log, tag: str | None = None) -> None:
     """Stoppa innan taket passeras: provkör backupen (laddar inte upp något)
     och se hur mycket nytt som skulle tillkomma."""
     c = cfg()
@@ -281,7 +281,7 @@ def _cap_check(name: str, paths: list[str], log) -> None:
         return
     used = repo_size()
     out = restic(["backup", "--dry-run", "--json", "--host", "wizzos", "--tag", "wizzos",
-                  "--tag", f"app:{name}", *paths])
+                  "--tag", tag or f"app:{name}", *paths])
     added = 0
     for line in out.splitlines():
         if '"message_type":"summary"' in line:
@@ -382,6 +382,15 @@ def backup_all(log) -> dict:
         except Exception as e:  # noqa: BLE001
             log(f"{n}: misslyckades – {e}")
             failed.append(n)
+    # Viktiga mappar (t.ex. Foton) – se app/safety.py
+    from . import safety
+    for f in cfg().get("folders") or []:
+        try:
+            safety.backup_folder(f["path"], log)
+            ok.append(f"📁 {f.get('label') or f['path']}")
+        except Exception as e:  # noqa: BLE001
+            log(f"{f['path']}: misslyckades – {e}")
+            failed.append(f"📁 {f.get('label') or f['path']}")
     c = cfg()
     log("Gallrar gamla backuper ...")
     try:
@@ -623,7 +632,7 @@ def nightly(log) -> dict:
     res = backup_all(log)
     # Testa den app som testades för längst sedan (och som har en backup).
     st = state().get("apps", {})
-    candidates = [n for n in res["ok"]]
+    candidates = [n for n in res["ok"] if not n.startswith("📁")]
     tested = None
     if candidates:
         candidates.sort(key=lambda n: (st.get(n, {}).get("last_test") or 0))
@@ -642,13 +651,21 @@ def nightly(log) -> dict:
             log(f"Kontrollen hittade problem: {e}")
             res["failed"].append("(kontroll)")
     run = {"time": start, "duration": int(time.time() - start), "ok": not res["failed"],
-           "apps": len(res["ok"]), "failed": res["failed"], "tested": tested}
+           "apps": len(candidates), "folders": len(res["ok"]) - len(candidates),
+           "failed": res["failed"], "tested": tested}
 
     def fn(s):
         s["last_run"] = run
         s["last_nightly"] = time.strftime("%Y-%m-%d")
     _update_state(fn)
     log("Klart." if run["ok"] else f"Klart, men med fel: {', '.join(res['failed'])}")
+    # Brandövning en gång i månaden (återställer allt på prov) – se app/safety.py
+    from . import safety
+    if safety.drill_due():
+        try:
+            safety.drill(log)
+        except Exception as e:  # noqa: BLE001
+            log(f"Brandövningen kunde inte köras: {e}")
     # Larm
     from . import alerts
     st = state().get("apps", {})

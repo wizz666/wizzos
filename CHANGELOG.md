@@ -1,5 +1,23 @@
 # Ändringar
 
+## 2.5.0
+
+- **Sovande appar** (appens meny → 💤 Låt appen sova när den inte används) – en app som ingen använt på 30 min, 1 h eller 3 h stoppas och frigör minnet. Öppnar någon appens adress visas ”💤 vaknar …” och appen startar av sig själv; sidan laddas om när den är klar. Utan egen adress väcks appen när du öppnar den från WizzOS. Appar som jobbar i bakgrunden somnar aldrig. Sovande appar ger inga larm och hoppas över av agenten och nattuppdateringen. Av som standard.
+- **🛟 Hur säkra är mina filer?** (Backup-sidan) – lägg till viktiga mappar, t.ex. dina foton, så följer de med i nattens backup. Ett enkelt kort visar för varje mapp hur många kopior som finns, om någon ligger utanför huset och om den är provåterställd: 🔴 bara ett ställe, 🟡 bara i huset eller inte provad, 🟢 tryggt.
+- **🧯 Brandövning** – en gång i månaden (eller på knapptryck) återställer WizzOS allt på prov: varje app startas i en sandlåda och stickprov av filerna hämtas ur backupen och jämförs med originalen. Du får veta: ”Går servern sönder är du igång igen på ungefär X minuter.” Originalen rörs aldrig.
+- **Flytta in från Unraid** (Appbutik → 📦 Flytta in från Unraid) – välj Unraids appmallar (my-….xml från utdelningen flash, eller en zip) så gör WizzOS om dem till WizzOS-appar med samma image, portar och inställningar. Unraids mappar byts mot WizzOS egna, lösenord följer med men visas aldrig, och det som inte går att göra om automatiskt (grafikkort, egen IP, docker.sock …) listas tydligt. Varje app visar också exakt hur du flyttar dess data.
+- *English: How safe are my files? (important folders in the backup, copies/outside-the-house/test-restored per folder) and a monthly fire drill that test-restores everything.*
+- *English: Move in from Unraid – turn Unraid's app templates into WizzOS apps, with secrets hidden and a clear list of what to check.*
+- *English: Sleeping apps – an unused app is stopped to free memory and wakes up by itself when someone opens it.*
+
+## 2.4.1
+
+- **Säkrare bakom Cloudflare-tunnel** (för dig som når WizzOS utifrån utan Tailscale, t.ex. med Cloudflare Access framför):
+  - spärren mot många felaktiga lösenord räknar på besökarens riktiga adress – en angripare kan inte längre låsa ute dig
+  - inloggningskakan märks alltid ”bara https” bakom tunneln
+  - inloggning via tunneln gäller i 12 timmar och glöms när webbläsaren stängs – bra på en lånad dator
+- *English: Safer behind a Cloudflare tunnel – real visitor IP for the login lockout, https-only cookie, and 12-hour sessions that end when the browser closes.*
+
 ## 2.4.0
 
 - **WizzOS-agenten** (Inställningar → WizzOS-agenten) – en lätt agent: regler först, AI sist. Den vaknar bara när något går fel (en app stannar, backupen misslyckas, disken fylls, certifikatet förnyas inte) och följer ett fast arbetsflöde:

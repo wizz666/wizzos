@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from . import (__version__, agent, ai, alerts, approvals, apps, auth, backup, card, config, cost, docindex, files, finder, goals, homeassistant, jobs, i18n,
                legacy, mail, mcp, oauth, paperless, proxy, security, selfupdate, shares, snapshots,
-               letter, move, nestward, store, system, trial, updater, users)
+               letter, migrate, move, nestward, safety, sleep, store, system, trial, updater, users)
 
 STATIC = Path(__file__).parent / "static"
 app = FastAPI(title="WizzOS", docs_url=None, redoc_url=None, openapi_url=None)
@@ -89,6 +89,7 @@ async def startup():
     selfupdate.announce_on_start()
     backup.start_scheduler()
     alerts.start_monitor()
+    sleep.start_watch()
     agent.register()
     proxy.safe_apply()
     # Saknas en butik – eller är den hämtad före 2.2 (utan engelska texter) – hämta den.
@@ -135,9 +136,13 @@ def _fs(request: Request):
 
 def _login_response(data: dict, request: Request, uid: str = "owner") -> JSONResponse:
     resp = JSONResponse(data)
-    resp.set_cookie(auth.COOKIE, auth.make_token(uid), max_age=auth.SESSION_DAYS * 86400,
-                    httponly=True, samesite="strict",
-                    secure=request.url.scheme == "https")
+    if auth.via_tunnel(request):
+        # Fjärradressen kan vara en lånad dator: kort inloggning som försvinner när webbläsaren stängs.
+        resp.set_cookie(auth.COOKIE, auth.make_token(uid, auth.REMOTE_HOURS * 3600),
+                        httponly=True, samesite="strict", secure=True)
+    else:
+        resp.set_cookie(auth.COOKIE, auth.make_token(uid), max_age=auth.SESSION_DAYS * 86400,
+                        httponly=True, samesite="strict", secure=auth.is_https(request))
     return resp
 
 
@@ -174,7 +179,7 @@ def welcome_done():
 
 @app.post("/api/login")
 def login(body: LoginIn, request: Request):
-    ip = request.client.host if request.client else "?"
+    ip = auth.client_ip(request)
     if auth.too_many_failures(ip):
         raise HTTPException(429, "För många försök. Vänta fem minuter.")
     uid = body.user or "owner"
@@ -411,6 +416,61 @@ class CustomIn(BaseModel):
 def custom(body: CustomIn):
     return {"job": apps.install_custom(body.name.strip().lower(), body.title, body.compose,
                                        body.port, body.icon)}
+
+
+# ---------- flytta in från Unraid ----------
+
+class MigFile(BaseModel):
+    name: str
+    data: str  # base64
+
+
+class MigScanIn(BaseModel):
+    files: list[MigFile]
+
+
+class MigInstallIn(BaseModel):
+    scan: str
+    file: str
+    name: str
+
+
+_MIG_SCANS: dict[str, dict] = {}
+
+
+@app.post("/api/migrate/unraid/scan")
+def migrate_scan(body: MigScanIn):
+    import base64
+    import secrets as _s
+    files = []
+    for f in body.files[:migrate.MAX_FILES]:
+        try:
+            files += migrate.read_upload(f.name, base64.b64decode(f.data))
+        except Exception:  # noqa: BLE001
+            raise HTTPException(400, f"Kunde inte läsa {f.name}.")
+    have = {a["name"] for a in apps.installed()["apps"]}
+    items = migrate.scan(files[:migrate.MAX_FILES], have)
+    sid = _s.token_urlsafe(9)
+    _MIG_SCANS.clear()  # bara den senaste – innehåller lösenord, ska inte ligga kvar
+    _MIG_SCANS[sid] = {i["file"]: i for i in items if "error" not in i}
+    return {"scan": sid, "items": [i if "error" in i else migrate.preview(i) for i in items]}
+
+
+@app.post("/api/migrate/unraid/install")
+def migrate_install(body: MigInstallIn):
+    item = (_MIG_SCANS.get(body.scan) or {}).get(body.file)
+    if not item:
+        raise HTTPException(404, "Läs in mallarna igen.")
+    name = migrate.clean_name(body.name)
+    compose = item["compose"]
+    if name != item["name"]:
+        compose = compose.replace(f"/DATA/AppData/{item['name']}", f"/DATA/AppData/{name}")
+        compose = re.sub(rf"(?m)^  {re.escape(item['name'])}:", f"  {name}:", compose)
+        compose = compose.replace(f"container_name: {item['name']}", f"container_name: {name}")
+    try:
+        return {"job": apps.install_custom(name, item["title"], compose, item["port"], item["icon"])}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 # ---------- mina appar ----------
@@ -657,13 +717,45 @@ def backup_settings(body: BackupSettingsIn):
     return backup.public_cfg()
 
 
+# ---------- hur säkra är mina filer? (fotokoll + brandövning) ----------
+
+class SafetyFolderIn(BaseModel):
+    path: str
+    label: str = ""
+
+
+@app.get("/api/safety")
+def safety_get():
+    return safety.report()
+
+
+@app.post("/api/safety/folders")
+def safety_add(body: SafetyFolderIn):
+    try:
+        return {"folders": safety.add_folder(body.path, body.label)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/safety/folders")
+def safety_remove(path: str):
+    return {"folders": safety.remove_folder(path)}
+
+
+@app.post("/api/safety/drill")
+def safety_drill():
+    if not backup.cfg().get("type"):
+        raise HTTPException(400, "Ställ in backupen först.")
+    return {"job": safety.run_drill_now()}
+
+
 class RevealIn(BaseModel):
     password: str
 
 
 @app.post("/api/backup/reveal")
 def backup_reveal(body: RevealIn, request: Request):
-    ip = request.client.host if request.client else "?"
+    ip = auth.client_ip(request)
     if auth.too_many_failures(ip):
         raise HTTPException(429, "För många försök. Vänta fem minuter.")
     if not auth.check_password(body.password):
@@ -939,6 +1031,61 @@ def app_autoupdate(name: str, body: AutoIn):
     return updater.set_auto(name, body.on)
 
 
+# ---------- sovande appar ----------
+
+class SleepIn(BaseModel):
+    minutes: int
+
+
+@app.post("/api/apps/{name}/sleep")
+def app_sleep(name: str, body: SleepIn):
+    if not apps.app_dir(name).exists():
+        raise HTTPException(404, "Appen finns inte.")
+    try:
+        return sleep.set_sleep(name, body.minutes)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/apps/{name}/wake")
+def app_wake(name: str):
+    if not apps.app_dir(name).exists():
+        raise HTTPException(404, "Appen finns inte.")
+    return {"waking": sleep.wake(name)}
+
+
+@app.get("/api/sleep")
+def sleep_summary():
+    return sleep.summary()
+
+
+@app.get("/__wake")
+def wake_page(request: Request):
+    """Caddy skickar hit besökare när en app inte svarar. Bara proxyn (med nyckeln) kommer hit."""
+    import hmac as _hmac
+    import html as _h
+    if not _hmac.compare_digest(request.headers.get("x-wizzos-wake", ""), sleep.wake_key()):
+        return Response(status_code=404)
+    a = sleep.app_for_host(request.headers.get("x-wizzos-host", ""))
+    uri = request.headers.get("x-wizzos-uri", "/")
+    if not uri.startswith("/") or uri.startswith("//"):
+        uri = "/"
+    title = _h.escape(a.get("title", a["name"])) if a else "Appen"
+    if a and (a.get("asleep") or a["name"] in sleep._waking):
+        sleep.wake(a["name"])
+        head, msg = f"💤 {title} vaknar …", "Appen sov för att spara minne. Den startar nu – sidan laddas om av sig själv om några sekunder."
+        wait = 3
+    else:
+        head, msg = f"{title} svarar inte just nu", "Den kanske startar om eller uppdateras. Sidan försöker igen av sig själv."
+        wait = 8
+    page = (f'<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+            f'<meta http-equiv="refresh" content="{wait};url={_h.escape(uri, quote=True)}"><title>{head}</title></head>'
+            '<body style="font-family:system-ui,sans-serif;background:#0f1222;color:#e8eaf6;display:grid;place-items:center;min-height:100vh;margin:0">'
+            f'<div style="text-align:center;max-width:28rem;padding:2rem"><h1 style="font-weight:600">{head}</h1>'
+            f'<p style="opacity:.8;line-height:1.5">{msg}</p><p style="opacity:.5;font-size:.85rem">WizzOS</p></div></body></html>')
+    return _html(page, status_code=503, headers={**_PUBLIC_HEADERS, "Retry-After": str(wait)})
+
+
 # ---------- Home Assistant ----------
 
 class HaIn(BaseModel):
@@ -1179,7 +1326,7 @@ def share_page(token: str, request: Request, p: str = ""):
 async def share_unlock(token: str, request: Request):
     from fastapi.responses import RedirectResponse
     f = await _form(request)
-    ip = request.client.host if request.client else "?"
+    ip = auth.client_ip(request)
     try:
         ok = shares.check_pin(token, f.get("pin", ""), ip)
     except ValueError as e:
@@ -1188,7 +1335,7 @@ async def share_unlock(token: str, request: Request):
         return _html(shares.pin_page(token, "Fel kod."), 401, headers=_PUBLIC_HEADERS)
     resp = RedirectResponse(f"/s/{token}", 303)
     resp.set_cookie(f"wzs_{token[:10]}", shares.unlock_cookie(token), max_age=86400, httponly=True,
-                    samesite="lax", secure=request.url.scheme == "https", path=f"/s/{token}")
+                    samesite="lax", secure=auth.is_https(request), path=f"/s/{token}")
     return resp
 
 
@@ -1295,7 +1442,7 @@ def alive_get(token: str):
 @app.post("/alive/{token}")
 async def alive_post(token: str, request: Request):
     f = await _form(request)
-    ip = request.client.host if request.client else "?"
+    ip = auth.client_ip(request)
     kind = legacy.token_kind(token)
     try:
         legacy.check_in(token, f.get("pin", ""), ip)
@@ -1494,7 +1641,7 @@ def oauth_authorize(request: Request):
 async def oauth_authorize_post(request: Request):
     from fastapi.responses import RedirectResponse
     f = await _form(request)
-    ip = request.client.host if request.client else "?"
+    ip = auth.client_ip(request)
     hdr = {**_PUBLIC_HEADERS, "Content-Security-Policy": _PUBLIC_HEADERS["Content-Security-Policy"].replace("form-action 'self'", "form-action 'self' https: http://localhost:* http://127.0.0.1:*")}
     kind, val = oauth.decide(f, ip)
     if kind == "redirect":

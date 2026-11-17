@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import ipaddress
 import secrets
 import time
 
@@ -16,8 +17,39 @@ from . import config
 
 COOKIE = "wizzos_session"
 SESSION_DAYS = 30
+REMOTE_HOURS = 12  # inloggning via fjärradressen (Cloudflare) – kort, och glöms när webbläsaren stängs
 
 _failures: dict[str, list[float]] = {}
+
+
+def _local_peer(request) -> bool:
+    """Kom anropet från något på den egna maskinen/nätet (t.ex. cloudflared), inte direkt från internet?"""
+    host = request.client.host if request.client else ""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_private or ip.is_loopback or ip in ipaddress.ip_network("100.64.0.0/10")
+
+
+def via_tunnel(request) -> bool:
+    """Anropet kom via Cloudflare-tunneln (fjärradressen)."""
+    return bool(request.headers.get("cf-connecting-ip")) and _local_peer(request)
+
+
+def client_ip(request) -> str:
+    """Besökarens riktiga IP. Via tunneln är avsändaren alltid cloudflared – då gäller Cloudflares uppgift,
+    annars kunde en enda angripare låsa ute alla med felaktiga lösenord."""
+    if via_tunnel(request):
+        return request.headers["cf-connecting-ip"].split(",")[0].strip()
+    return request.client.host if request.client else "?"
+
+
+def is_https(request) -> bool:
+    if request.url.scheme == "https":
+        return True
+    proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    return proto == "https" and _local_peer(request)
 
 
 def _hash(password: str, salt: bytes) -> str:
@@ -65,12 +97,12 @@ def _sig(secret: str, expires: str, uid: str, gen: int) -> str:
     return hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
 
 
-def make_token(uid: str = "owner") -> str:
+def make_token(uid: str = "owner", seconds: int | None = None) -> str:
     from . import users
     u = users.get(uid)
     if not u:
         raise ValueError("Okänd person.")
-    expires = str(int(time.time()) + SESSION_DAYS * 86400)
+    expires = str(int(time.time()) + (seconds or SESSION_DAYS * 86400))
     return f"{expires}.{uid}.{_sig(config.load()['secret'], expires, uid, u.get('gen', 0))}"
 
 

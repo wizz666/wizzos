@@ -630,6 +630,7 @@ def action(name: str, what: str) -> str | None:
         mf = d / "meta.json"
         meta = json.loads(mf.read_text("utf-8"))
         meta["user_stopped"] = what == "stop"
+        meta["asleep"] = False  # startad/stoppad för hand = inte längre "sover"
         mf.write_text(json.dumps(meta, ensure_ascii=False, indent=2), "utf-8")
         return None
     if what == "update":
