@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (__version__, ai, alerts, approvals, apps, auth, backup, card, config, cost, docindex, files, finder, goals, homeassistant, jobs, i18n,
+from . import (__version__, agent, ai, alerts, approvals, apps, auth, backup, card, config, cost, docindex, files, finder, goals, homeassistant, jobs, i18n,
                legacy, mail, mcp, oauth, paperless, proxy, security, selfupdate, shares, snapshots,
                letter, move, nestward, store, system, trial, updater, users)
 
@@ -89,6 +89,7 @@ async def startup():
     selfupdate.announce_on_start()
     backup.start_scheduler()
     alerts.start_monitor()
+    agent.register()
     proxy.safe_apply()
     # Saknas en butik – eller är den hämtad före 2.2 (utan engelska texter) – hämta den.
     missing = [s for s in config.load()["stores"]
@@ -559,6 +560,29 @@ class AiSettingsIn(BaseModel):
 @app.put("/api/ai")
 def ai_put(body: AiSettingsIn):
     return ai.save(body.model_dump())
+
+
+class AgentIn(BaseModel):
+    enabled: bool | None = None
+    level: str | None = None
+    ai_daily_max: int | None = None
+    notes: str | None = None
+
+
+@app.get("/api/agent")
+def agent_get():
+    return agent.public()
+
+
+@app.put("/api/agent")
+def agent_put(body: AgentIn):
+    return agent.save({k: v for k, v in body.model_dump().items() if v is not None})
+
+
+@app.post("/api/agent/test")
+def agent_test():
+    """Låtsas att en app har stannat – visar hur agenten skulle göra, utan att röra något."""
+    return agent.dry_run()
 
 
 @app.post("/api/ai/test")

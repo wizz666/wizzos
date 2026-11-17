@@ -1,5 +1,15 @@
 # Ändringar
 
+## 2.4.0
+
+- **WizzOS-agenten** (Inställningar → WizzOS-agenten) – en lätt agent: regler först, AI sist. Den vaknar bara när något går fel (en app stannar, backupen misslyckas, disken fylls, certifikatet förnyas inte) och följer ett fast arbetsflöde:
+  - startar om appen en gång, kör backupen igen eller läser in proxyn på nytt – löser det problemet behövs ingen AI alls
+  - annars förklarar AI:n vad som troligen är fel, utifrån loggen och dina anteckningar
+  - en app som nyss uppdaterats och mår dåligt? Agenten frågar i mobilen om den ska återställas till läget före uppdateringen
+  - full disk? Den räknar ut vad som tar plats och frågar om den får rensa programrester som ingen app använder
+- Tak för antal AI-anrop per dag, anteckningar som agenten tar hänsyn till och en logg över vad den gjort. Av som standard.
+- *English: The WizzOS agent – rules first, AI last. Wakes up only when something goes wrong, fixes the simple things itself and asks on your phone before anything hard to undo.*
+
 ## 2.3.0
 
 - **WizzOS-paket** – ett öppet format (`x-wizzos` i en vanlig compose-fil) för appar som kommer färdiginställda: hemliga nycklar, mappar, inställningsfiler, "Så kommer du igång", koppling till WizzOS och backup utan stopp. Se [docs/wizzos-paket.md](docs/wizzos-paket.md).

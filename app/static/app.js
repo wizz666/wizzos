@@ -449,6 +449,8 @@ const pages = {
 
         <div class="card"><h2>🌐 Språk</h2><p class="hint" style="margin-top:-6px">Gäller den här webbläsaren.</p>${langPicker()}</div>
 
+        <div class="card" id="agentcard"><h2>🤖 WizzOS-agenten</h2><p class="hint">Laddar …</p></div>
+
         <div class="card" id="famcard"><h2>👪 Familj och gäster</h2><p class="hint">Laddar …</p></div>
 
         <div class="card" id="selfupd"><h2>⬆️ WizzOS</h2><p class="hint">Laddar …</p></div>
@@ -613,6 +615,7 @@ const pages = {
     mailCard().catch(() => {});
     selfUpdCard().catch(() => {});
     familyCard().catch(() => {});
+    agentCard().catch(() => {});
     aiLinkCard().catch(() => {});
     docCard().catch(() => {});
     $("#alsave").onclick = async () => { try { await api("/api/alerts", { method: "PUT", body: alBody() }); $("#alk").value = ""; toast("Larmen är sparade", "good"); route(); } catch (e) { toast(e.message, "bad"); } };

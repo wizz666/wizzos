@@ -136,6 +136,11 @@ def raise_alert(key: str, title: str, message: str, priority: int = 4) -> None:
         s.setdefault("history", []).append({"time": time.time(), "kind": "problem",
                                             "title": title, "message": message})
         _save_state(s)
+    try:  # nytt problem → agenten får försöka (gör inget om den är avstängd)
+        from . import agent
+        agent.on_alert(key, title, message)
+    except Exception:  # noqa: BLE001
+        pass
     c = cfg()
     if c.get("enabled"):
         try:
