@@ -322,6 +322,8 @@ def install(app: dict, name: str, port_overrides: dict, env_overrides: dict,
     }
     if recipes.backup_before(app):
         meta["backup_before"] = recipes.backup_before(app)
+    if recipes.playbooks(app):
+        meta["playbooks"] = recipes.playbooks(app)
     gui = _gui_https_port(doc, meta["main"])
     if gui:
         meta["port"], meta["scheme"] = gui, "https"

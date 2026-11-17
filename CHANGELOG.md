@@ -1,5 +1,12 @@
 # Ändringar
 
+## 2.8.0
+
+- **💬 Telegram** (Inställningar → Telegram) – prata med din server från mobilen. Skapa en egen bot hos @BotFather, klistra in nyckeln och koppla din Telegram med en engångskod. `/status`, `/appar`, `/backup` – och allt annat svarar AI-hjälpen på, med föreslagna åtgärder som knappar (starta om, uppdatera, visa logg, backup …; stoppa kräver ett extra ja). Larm och agentens frågor kommer också dit, med Godkänn/Neka direkt i chatten. Bara chattar du kopplat får svar.
+- **Playbooks i WizzOS-paket** – ett paket kan nu säga hur appen lagas (`x-wizzos.playbooks`): starta om en del, vänta, köra ett kommando i appen. WizzOS-agenten följer appens egen playbook först, innan den startar om allt eller frågar AI:n. Paperless-paketet har en för när kön (Redis) tappar kontakten. Formatet finns i docs/wizzos-paket.md.
+- Kartan har en egen rad i menyn (dold på mobilen och för familjen).
+- *English: Telegram chat with your server (status, AI help with action buttons, alerts and approvals) and playbooks in WizzOS packages that the agent follows first.*
+
 ## 2.7.0
 
 - **📁 Mina mappar** (Filer → Mina mappar) – skapa en egen mapp med några klick: välj namn, om den ska vara **nåbar från datorn och telefonen** (en vanlig nätverksmapp, t.ex. `\\server\Kvitton`), om den ska vara **med i backupen** och **vem som får se den** (bara du eller hela familjen). Varje person har ett eget nätverkslösenord.

@@ -454,6 +454,7 @@ const pages = {
         <div class="card"><h2>🌐 Språk</h2><p class="hint" style="margin-top:-6px">Gäller den här webbläsaren.</p>${langPicker()}</div>
 
         <div class="card" id="agentcard"><h2>🤖 WizzOS-agenten</h2><p class="hint">Laddar …</p></div>
+        <div class="card" id="tgcard"><h2>💬 Telegram</h2><p class="hint">Laddar …</p></div>
 
         <div class="card" id="famcard"><h2>👪 Familj och gäster</h2><p class="hint">Laddar …</p></div>
 
@@ -620,6 +621,7 @@ const pages = {
     selfUpdCard().catch(() => {});
     familyCard().catch(() => {});
     agentCard().catch(() => {});
+    telegramCard().catch(() => {});
     aiLinkCard().catch(() => {});
     docCard().catch(() => {});
     $("#alsave").onclick = async () => { try { await api("/api/alerts", { method: "PUT", body: alBody() }); $("#alk").value = ""; toast("Larmen är sparade", "good"); route(); } catch (e) { toast(e.message, "bad"); } };
@@ -1960,19 +1962,22 @@ async function homeMapPage(view) {
       <div class="m" style="margin:2px 0 8px">${esc([m.os, m.model].filter(Boolean).join(" · ") || m.kind)}${m.vm ? " · virtuell" : ""}${m.local ? " · Nestward" : ""}</div>
       ${m.mem_total ? `<div class="m">Minne: ${fmtBytes(m.mem_free)} ledigt av ${fmtBytes(m.mem_total)}</div>${bar(memP)}` : ""}
       ${m.disk_total ? `<div class="m">Disk: ${fmtBytes(m.disk_free)} ledigt av ${fmtBytes(m.disk_total)}</div>${bar(diskP)}` : ""}
+      ${(m.storage || []).map((st) => `<div class="m">Plats för VM/containrar (${esc(st.name)}): ${fmtBytes(st.free)} ledigt av ${fmtBytes(st.total)}</div>${bar(pct(st.total - st.free, st.total))}`).join("")}
       <div class="m" style="margin-top:6px">${m.cores ? `${m.cores} kärnor · ` : ""}${m.services} tjänster · ${m.up} uppe${m.down ? ` · <b style="color:var(--bad)">${m.down} nere</b>` : ""}</div></div>`;
   };
   const real = ms.filter((m) => !m.vm), virt = ms.filter((m) => m.vm);
   const online = ms.filter((m) => m.online && m.mem_total);
   const bestMem = [...online].sort((a, b) => b.mem_free - a.mem_free)[0];
-  const bestDisk = [...online].sort((a, b) => b.disk_free - a.disk_free)[0];
-  const tight = online.filter((m) => pct(m.mem_total - m.mem_free, m.mem_total) >= 90 || pct(m.disk_total - m.disk_free, m.disk_total) >= 90);
+  const room = (m) => Math.max(m.disk_free || 0, ...(m.storage || []).map((st) => st.free));
+  const bestDisk = [...online].sort((a, b) => room(b) - room(a))[0];
+  const tight = online.filter((m) => pct(m.mem_total - m.mem_free, m.mem_total) >= 90 || pct(m.disk_total - m.disk_free, m.disk_total) >= 90
+    || (m.storage || []).some((st) => pct(st.total - st.free, st.total) >= 90));
   const off = ms.filter((m) => !m.online);
   view.innerHTML = `<div class="head fade-in"><div><h1>🗺️ Ditt hem-IT</h1><p>${ms.length} maskiner · ${fmtBytes(ms.reduce((a, m) => a + (m.mem_total || 0), 0))} minne · ${fmtBytes(ms.reduce((a, m) => a + (m.disk_total || 0), 0))} disk</p></div>
       <div><a class="btn" href="${esc(safeUrl(d.url) || "#")}" target="_blank" rel="noopener">Öppna Nestward ↗</a></div></div>
     <div class="card fade-in" style="padding:14px 16px;margin-bottom:14px">
       ${bestMem ? `<p>🧠 Mest ledigt minne: <b>${esc(bestMem.name)}</b> (${fmtBytes(bestMem.mem_free)}) – bästa platsen för nästa tunga app.</p>` : ""}
-      ${bestDisk ? `<p>💾 Mest ledig disk: <b>${esc(bestDisk.name)}</b> (${fmtBytes(bestDisk.disk_free)}).</p>` : ""}
+      ${bestDisk ? `<p>💾 Mest ledig plats: <b>${esc(bestDisk.name)}</b> (${fmtBytes(room(bestDisk))}).</p>` : ""}
       ${tight.length ? `<p>⚠️ Trångt på: ${tight.map((m) => `<b>${esc(m.name)}</b>`).join(", ")} (minne eller disk över 90 %).</p>` : "<p>✅ Ingen maskin är full.</p>"}
       ${off.length ? `<p>🔴 Hörs inte av: ${off.map((m) => `<b>${esc(m.name)}</b>`).join(", ")}.</p>` : ""}</div>
     ${real.length ? `<h2>Datorer och servrar <span class="count">${real.length}</span></h2><div class="map-grid">${real.map(card).join("")}</div>` : ""}

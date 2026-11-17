@@ -81,6 +81,11 @@ def create(who: str, tool: str, args: dict, title: str, detail: str) -> dict:
 
 def _push(r: dict) -> None:
     from . import alerts
+    try:
+        from . import telegram
+        telegram.approval(r)
+    except Exception:  # noqa: BLE001
+        pass
     c = alerts.cfg()
     if not (c.get("ntfy_url") and c.get("ntfy_topic")):
         return

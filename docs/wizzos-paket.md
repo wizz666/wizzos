@@ -41,6 +41,17 @@ x-wizzos:
     before:                 # körs i appen före backupen – då stoppas den inte
       service: db
       command: pg_dump -U app app > /backup/app.sql
+  playbooks:                # "så lagar du mig" – WizzOS-agenten följer dem först
+    - when: unhealthy       # när appen inte mår bra (det enda som stöds än)
+      log: "database is locked|Connection refused"   # valfritt: bara om loggen matchar (regex)
+      steps:                # högst 8, körs i ordning, sedan måste appen må bra i 30 s
+        - restart_service: redis     # starta om en del av appen
+        - wait: 15                   # vänta (högst 300 s)
+        - exec: {service: app, command: "rm -f /data/app.lock"}   # kommando i appen (högst 300 s)
+        - restart                    # starta om hela appen
+      explain:              # visas för ägaren (och ges till AI:n) om stegen inte räckte
+        sv_SE: "…"
+        en_US: "…"
   link: paperless           # kopplingar WizzOS kan göra själv (just nu: paperless)
   search_engine: false      # true = WizzOS kan använda appen som sökmotor (SearXNG)
   goal:                     # visas under "Vad vill du göra?"
@@ -70,9 +81,18 @@ Tjänsten som ska få `env` behöver raden `env_file: [wizzos.env]` i compose-fi
 `{{ … }}` används i stället för `${ … }` så att docker compose inte försöker fylla i dem.
 Blocket tas bort ur den compose-fil som docker compose får.
 
+## Playbooks och agenten
+
+När en app slutar må bra och WizzOS-agenten är påslagen på nivån *Fixa det enkla själv* följer
+agenten först appens egna playbooks – den första vars `log` matchar (eller som saknar `log`).
+Mår appen bra 30 sekunder efteråt är problemet löst, utan AI. Annars gör agenten som vanligt:
+startar om appen en gång och låter sedan AI:n förklara, med paketets `explain` som ledtråd.
+På nivån *Bara förklara* körs inga steg.
+
 ## Säkerhet
 
 - Mappar och filer måste ligga under `/DATA` och aldrig i WizzOS egen mapp.
 - Filer skrivs bara om de inte redan finns – dina ändringar skrivs aldrig över.
 - `wizzos.env` får rättigheterna 600 och följer med i backupen.
 - Hemligheter visas bara i installationsloggen om paketet själv ber om det (`after_install`).
+- Playbook-steg är begränsade till omstart, väntan och kommandon *inuti appens egna behållare*.

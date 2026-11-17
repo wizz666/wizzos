@@ -119,6 +119,13 @@ def send(title: str, message: str, priority: int = 4, tags: str = "warning", c: 
             sent = True
         except Exception as e:  # noqa: BLE001
             errors.append(f"webhook: {e}")
+    if not actions:  # frågor med knappar skickas till Telegram av approvals (med egna knappar)
+        try:
+            from . import telegram
+            if telegram.alert(title, message):
+                sent = True
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"telegram: {e}")
     if not sent:
         raise RuntimeError("; ".join(errors) or "Ingen larmkanal är inställd.")
 

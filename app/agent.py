@@ -199,6 +199,21 @@ def _pb_app(key: str, message: str, run: Run) -> None:
         run.done("hoppade över")
         return
     title = a["title"]
+    pb_explain = ""
+    if cfg()["level"] == "fix" and name not in apps._busy and a.get("playbooks"):
+        recent_log = apps.logs(name)[-5000:]
+        for pb in a["playbooks"]:
+            if pb.get("log") and not re.search(pb["log"], recent_log, re.I):
+                continue
+            run.step(f"Följer {title}s egen playbook (från WizzOS-paketet).")
+            if _run_steps(name, pb["steps"], run):
+                run.step("Appen mår bra igen.")
+                alerts.resolve(key, f"WizzOS-agenten lagade {title} med appens egen playbook – nu mår den bra igen.")
+                run.done("löst")
+                return
+            pb_explain = pb.get("explain") or ""
+            run.step("Playbooken räckte inte.")
+            break
     if cfg()["level"] == "fix" and name not in apps._busy:
         run.step(f"Startar om {title} en gång.")
         try:
@@ -216,7 +231,11 @@ def _pb_app(key: str, message: str, run: Run) -> None:
     snaps = snapshots.list_for(name)
     recent_upd = next((s for s in snaps if s.get("reason") == "update" and time.time() - s["created"] < 4 * 86400), None)
     expl = _ai(run, f"Appen {title} har problem: {message} Förklara troligaste orsaken utifrån loggen och "
-                    "vad ägaren kan göra.", f"Status: {a['status']}\nSenaste loggraderna:\n{logs}")
+                    "vad ägaren kan göra.", f"Status: {a['status']}\n"
+                    + (f"Appens paket säger: {pb_explain}\n" if pb_explain else "")
+                    + f"Senaste loggraderna:\n{logs}")
+    if pb_explain and not expl:
+        expl = pb_explain
     if recent_upd:
         r = approvals.create(WHO, "restore_snapshot", {"app": name, "snapshot_id": recent_upd["id"]},
                              f"återställa {title} till läget före uppdateringen",
@@ -229,6 +248,32 @@ def _pb_app(key: str, message: str, run: Run) -> None:
         return
     _tell(f"{title}: vad agenten hittade", expl or f"{title} startar inte. Öppna WizzOS och tryck ✨ Förklara i loggen.")
     run.done("förklarat")
+
+
+def _run_steps(name: str, steps: list[dict], run: Run) -> bool:
+    """Kör stegen i en paket-playbook. True om appen mår bra efteråt."""
+    from . import apps
+    try:
+        for st in steps:
+            if st.get("restart"):
+                run.step("Startar om appen.")
+                apps.action(name, "restart")
+            elif st.get("restart_service"):
+                run.step(f"Startar om delen {st['restart_service']}.")
+                subprocess.run(apps._compose(name, "restart", st["restart_service"]), capture_output=True, timeout=180)
+            elif st.get("wait"):
+                run.step(f"Väntar {st['wait']} s.")
+                time.sleep(st["wait"])
+            elif st.get("exec"):
+                e = st["exec"]
+                run.step(f"Kör paketets kommando i {e['service']}.")
+                subprocess.run(apps._compose(name, "exec", "-T", e["service"], "sh", "-c", e["command"]),
+                               capture_output=True, timeout=300)
+        ok, _why = apps.wait_healthy(name, run.step, timeout=150, stable=30)
+        return ok
+    except Exception as e:  # noqa: BLE001
+        run.step(f"Playbooken avbröts: {e}")
+        return False
 
 
 def _pb_backup(key: str, message: str, run: Run) -> None:

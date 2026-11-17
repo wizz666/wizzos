@@ -84,6 +84,16 @@ x-casaos:
 x-wizzos:
   version: 1
   link: paperless
+  playbooks:
+    - when: unhealthy
+      log: "redis|broker|Error 111|Connection refused"
+      steps:
+        - restart_service: broker
+        - wait: 15
+        - restart_service: paperless
+      explain:
+        sv_SE: "Paperless tappade kontakten med sin kö (Redis). Agenten startade om kön och Paperless."
+        en_US: "Paperless lost contact with its queue (Redis). The agent restarted the queue and Paperless."
   secrets:
     SECRET_KEY: 50
     ADMIN_PASSWORD: 16

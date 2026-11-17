@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from . import (__version__, agent, ai, alerts, approvals, apps, auth, backup, card, config, cost, docindex, files, finder, goals, homeassistant, inbox, jobs, i18n,
                legacy, mail, mcp, oauth, paperless, proxy, security, selfupdate, shares, snapshots,
-               letter, migrate, move, myfolders, nestward, safety, sleep, store, system, trial, updater, users)
+               letter, migrate, move, myfolders, nestward, safety, sleep, store, system, telegram, trial, updater, users)
 
 STATIC = Path(__file__).parent / "static"
 app = FastAPI(title="WizzOS", docs_url=None, redoc_url=None, openapi_url=None)
@@ -91,6 +91,7 @@ async def startup():
     alerts.start_monitor()
     sleep.start_watch()
     inbox.start_watch()
+    telegram.start()
     agent.register()
     proxy.safe_apply()
     # Saknas en butik – eller är den hämtad före 2.2 (utan engelska texter) – hämta den.
@@ -732,6 +733,52 @@ def share_in_fallback():
     # Bara om service workern inte hunnit installeras – då kom filerna aldrig fram.
     from fastapi.responses import RedirectResponse
     return RedirectResponse("/#/dela/ingen", status_code=303)
+
+
+# ---------- Telegram ----------
+
+class TgTokenIn(BaseModel):
+    token: str
+
+
+class TgOnIn(BaseModel):
+    on: bool
+
+
+@app.get("/api/telegram")
+def tg_get():
+    return telegram.public()
+
+
+@app.put("/api/telegram")
+def tg_token(body: TgTokenIn):
+    try:
+        return telegram.set_token(body.token)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/telegram")
+def tg_off():
+    return telegram.unlink()
+
+
+@app.post("/api/telegram/pair")
+def tg_pair():
+    try:
+        return telegram.start_pairing()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.put("/api/telegram/alerts")
+def tg_alerts(body: TgOnIn):
+    return telegram.set_alerts(body.on)
+
+
+@app.delete("/api/telegram/chats/{chat_id}")
+def tg_unlink_chat(chat_id: int):
+    return telegram.unlink(chat_id)
 
 
 # ---------- karta över hem-IT ----------

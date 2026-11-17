@@ -161,6 +161,48 @@ def backup_before(app: dict) -> dict | None:
     return None
 
 
+STEP_KEYS = ("restart", "restart_service", "wait", "exec")
+
+
+def playbooks(app: dict) -> list[dict]:
+    """Paketets egna "så lagar du mig"-regler (x-wizzos.playbooks), kontrollerade.
+
+    - when: unhealthy            # när appen inte mår bra (det enda som stöds än)
+      log: "database is locked"  # valfritt: bara om loggen innehåller detta (regex)
+      steps:                     # högst 8: restart | restart_service: <tjänst> | wait: <sek ≤ 300>
+        - restart_service: redis #           | exec: {service, command}  (≤ 300 s)
+      explain: {sv_SE: "…", en_US: "…"}   # visas för ägaren om stegen inte räckte
+    """
+    import re as _re
+    out = []
+    for pb in (block(app).get("playbooks") or [])[:10]:
+        if not isinstance(pb, dict) or pb.get("when", "unhealthy") != "unhealthy":
+            continue
+        steps = []
+        for st in (pb.get("steps") or [])[:8]:
+            if st == "restart":
+                steps.append({"restart": True})
+            elif isinstance(st, dict) and len(st) == 1 and next(iter(st)) in STEP_KEYS:
+                k, v = next(iter(st.items()))
+                if k == "restart_service" and isinstance(v, str) and _re.match(r"^[\w.-]+$", v):
+                    steps.append({k: v})
+                elif k == "wait" and isinstance(v, (int, float)) and 0 < v <= 300:
+                    steps.append({k: int(v)})
+                elif k == "exec" and isinstance(v, dict) and v.get("service") and v.get("command"):
+                    steps.append({k: {"service": str(v["service"]), "command": str(v["command"])[:500]}})
+        if not steps:
+            continue
+        log = str(pb.get("log") or "")
+        try:
+            _re.compile(log)
+        except _re.error:
+            continue
+        explain = pb.get("explain")
+        out.append({"when": "unhealthy", "log": log, "steps": steps,
+                    "explain": text(explain) if explain else ""})
+    return out
+
+
 def _link_paperless(name: str, meta: dict, log) -> None:
     import subprocess
     import time

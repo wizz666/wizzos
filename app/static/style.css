@@ -100,7 +100,7 @@ main { padding: 34px clamp(16px, 4vw, 48px) 100px; max-width: 1400px; width: 100
   .shell { grid-template-columns: 1fr; }
   .side { position: fixed; top: auto; bottom: 0; left: 0; right: 0; height: auto; flex-direction: row; justify-content: space-around; padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); border-right: 0; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 85%, transparent); z-index: 20; }
   .side a { flex-direction: column; gap: 2px; font-size: 11px; padding: 8px 12px; }
-  .side a.brand, .side-foot { display: none; }
+  .side a.brand, .side-foot, .side a[data-nav="karta"] { display: none; }  /* kartan nås via "Hela hemmet" på mobilen */
   .side a.active { box-shadow: none; }
   main { padding-top: 22px; }
 }
@@ -731,7 +731,7 @@ kbd { font: 600 11px/1 ui-monospace, monospace; padding: 3px 6px; border-radius:
 .only-limited { display: none !important; }
 body.limited .side a.only-limited { display: flex !important; }
 body.limited .side a[data-nav="store"], body.limited .side a[data-nav="backup"], body.limited .side a[data-nav="trygghet"],
-body.limited .side a[data-nav="settings"], body.limited #side-search, body.no-files .side a[data-nav="files"] { display: none; }
+body.limited .side a[data-nav="settings"], body.limited .side a[data-nav="karta"], body.limited #side-search, body.no-files .side a[data-nav="files"] { display: none; }
 #whoami { display: block; color: var(--text); font-weight: 600; margin-bottom: 4px; }
 #whoami:empty { display: none; }
 .auth-people { margin: 4px 0 6px; }
