@@ -757,3 +757,7 @@ body.limited .side a[data-nav="settings"], body.limited #side-search, body.no-fi
 .lang-pick button{border:0;background:none;color:inherit;font:inherit;font-size:.85rem;padding:5px 12px;border-radius:999px;cursor:pointer;opacity:.75}
 .lang-pick button.on{background:var(--accent,#7c6cff);color:#fff;opacity:1}
 #auth-lang{display:flex;justify-content:center;margin:10px 0 2px}
+
+/* Karta över hem-IT */
+.map-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-bottom:18px}
+.map-grid .card p,.map-grid .m{overflow-wrap:anywhere}

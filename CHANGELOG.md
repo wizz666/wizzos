@@ -1,5 +1,13 @@
 # Ändringar
 
+## 2.7.0
+
+- **📁 Mina mappar** (Filer → Mina mappar) – skapa en egen mapp med några klick: välj namn, om den ska vara **nåbar från datorn och telefonen** (en vanlig nätverksmapp, t.ex. `\\server\Kvitton`), om den ska vara **med i backupen** och **vem som får se den** (bara du eller hela familjen). Varje person har ett eget nätverkslösenord.
+- **📤 Dela till WizzOS** – lägg WizzOS på telefonens startskärm, så finns den i mobilens dela-meny. Foton, kvitton, PDF:er och länkar hamnar direkt i valfri mapp på servern – utan någon app.
+- **📥 Smart inkorg** (Filer → Inkorg) – släpp filer i Inkorg så sorteras de efter en minut: foton och filmer till Foton/År/Månad, PDF:er till Paperless (eller Dokument/År), dokument till Dokument/År, musik till Media/Musik. Enkla regler, ingen AI, och varje flytt kan ångras.
+- **🗺️ Ditt hem-IT** (Hem → Hela hemmet) – en karta över alla dina servrar och datorer via Nestward: ledigt minne och disk, hur många tjänster som är uppe, vilka som inte hörs av, och var nästa tunga app passar bäst. Kräver Nestward 0.11.
+- *English: My folders (network share, backup and who may see it in one step), Share to WizzOS from the phone's share menu, a smart inbox that sorts files by simple rules, and a map of your home IT via Nestward.*
+
 ## 2.6.0
 
 - **Flytta WizzOS – hela servern med allt** (Backup → 📦 Flytta till ny server):

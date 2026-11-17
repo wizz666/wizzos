@@ -79,6 +79,27 @@ def summary(force: bool = False) -> dict:
     return out
 
 
+def machines() -> dict:
+    """Kartan över hem-IT: Nestwards maskinlista (kräver Nestward 0.11+)."""
+    c = cfg()
+    if not c["url"] or not c["token"]:
+        return {"configured": False, "machines": []}
+    try:
+        r = httpx.get(f"{c['url']}/api/v1/share/machines", timeout=10,
+                      headers={"Authorization": f"Bearer {c['token']}"})
+    except httpx.HTTPError as e:
+        return {"configured": True, "ok": False, "error": f"Nestward svarar inte ({type(e).__name__}).", "machines": []}
+    if r.status_code == 200:
+        return {"configured": True, "ok": True, "url": c["url"], **r.json()}
+    old = "Nestward behöver uppdateras till 0.11 eller senare för kartan."
+    if r.status_code == 401:
+        # Äldre Nestward känner inte till adressen och kräver inloggning – fungerar nyckeln för sammanfattningen är det versionen.
+        msg = old if summary().get("ok") else "Nestward godkände inte nyckeln."
+    else:
+        msg = {404: old}.get(r.status_code, f"Nestward svarade {r.status_code}.")
+    return {"configured": True, "ok": False, "error": msg, "machines": [], "url": c["url"]}
+
+
 def write_status() -> None:
     from . import apps, backup
     inst = apps.installed()["apps"]

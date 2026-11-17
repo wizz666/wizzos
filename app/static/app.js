@@ -299,7 +299,7 @@ const pages = {
     const loadNestward = async () => {
       const n = await api("/api/nestward/summary"); const card = $("#nwcard"); if (!card) return;
       if (!n.configured) { card.classList.add("hidden"); return; }
-      card.classList.remove("hidden"); card.href = safeUrl(n.url) || "#/settings";
+      card.classList.remove("hidden"); card.href = "#/karta"; card.removeAttribute("target");
       const r = $("#r-nw");
       if (!n.ok) { $("#v-nw").textContent = "Ingen kontakt"; $("#s-nw").textContent = n.error || ""; r.style.setProperty("--c", "var(--muted)"); return; }
       r.style.setProperty("--p", n.score); r.style.setProperty("--c", n.score >= 85 ? "var(--good)" : n.score >= 60 ? "var(--warn)" : "var(--bad)");
@@ -716,6 +716,8 @@ async function filesPage(view) {
     <div class="head fade-in"><div><h1>Filer</h1><p id="fcrumbs" class="crumbs"></p></div>
       <div class="f-tools">
         <div class="search small"><svg><use href="#i-search"/></svg><input id="fq" placeholder="Filtrera …" value="${esc(fs.q)}" aria-label="Filtrera"></div>
+        <button class="btn" id="finbox">📥 Inkorg</button>
+        <button class="btn" id="fmine">📁 Mina mappar</button>
         <button class="btn" id="fmk"><svg><use href="#i-plus"/></svg>Ny mapp</button>
         <label class="btn primary" for="fup">⬆ Ladda upp</label><input type="file" id="fup" multiple hidden>
         <button class="btn" id="ftrash" title="Papperskorg">🗑️ <span id="ftc"></span></button>
@@ -726,6 +728,8 @@ async function filesPage(view) {
     <div class="f-drop hidden" id="fdrop"><div>Släpp filerna för att ladda upp till<br><b id="fdropto"></b></div></div>`;
   $("#fq").oninput = (e) => { fs.q = e.target.value; filesDraw(); };
   $("#fmk").onclick = filesMkdir;
+  $("#fmine").onclick = myFolders;
+  $("#finbox").onclick = inboxModal;
   $("#fup").onchange = (e) => { filesUpload([...e.target.files]); e.target.value = ""; };
   $("#ftrash").onclick = showTrash;
   // Dra och släpp filer var som helst på sidan.
@@ -1656,6 +1660,63 @@ async function safetyCard(el, reload) {
   };
 }
 
+async function inboxModal() {
+  let d;
+  try { d = await api("/api/inbox"); } catch (e) { toast(e.message, "bad"); return; }
+  const kindIcon = { photo: "🖼️", video: "🎬", pdf: "📄", doc: "📝", music: "🎵" };
+  const body = openModal(`<h3>📥 Smart inkorg</h3>
+    <p class="hint">Släpp filer i mappen <b>Inkorg</b> – från datorn, mobilen eller "Dela till WizzOS" – så sorterar WizzOS dem efter en minut. Med enkla regler, utan AI:</p>
+    <div class="card list">
+      <div class="row"><div><div class="n">🖼️ Foton och 🎬 filmer</div><div class="m">→ Foton/År/Månad (datum från bilden eller filnamnet)</div></div></div>
+      <div class="row"><div><div class="n">📄 PDF</div><div class="m">→ ${d.paperless ? "Paperless (blir sökbara)" : "Dokument/År"}</div></div></div>
+      <div class="row"><div><div class="n">📝 Dokument</div><div class="m">→ Dokument/År</div></div></div>
+      <div class="row"><div><div class="n">🎵 Musik</div><div class="m">→ Media/Musik</div></div></div>
+      <div class="row"><div><div class="n">📎 Övrigt</div><div class="m">ligger kvar i inkorgen</div></div></div></div>
+    <label class="radio" style="margin-top:10px"><input type="checkbox" id="ibon" ${d.enabled ? "checked" : ""}><div><b>Sortera inkorgen automatiskt</b><span>${d.waiting ? `${d.waiting} filer väntar just nu.` : "Inkorgen är tom."}</span></div></label>
+    ${d.recent.length ? `<h4 style="margin:14px 0 6px">Senast sorterat</h4><div class="card list">${d.recent.map((r) => `<div class="row"><div><div class="n">${kindIcon[r.kind] || "📎"} ${esc(r.name)}</div><div class="m">→ ${esc(r.to.replace(/^\/DATA/, "").replace(/\/[^/]*$/, ""))} · ${esc(timeAgo(r.t))}</div></div>
+      <div class="acts"><button class="btn" data-ibundo="${esc(r.to)}">↶ Ångra</button></div></div>`).join("")}</div>` : ""}
+    <div class="actions"><button class="btn" data-close>Stäng</button>${d.enabled && d.waiting ? '<button class="btn" id="ibnow">Sortera nu</button>' : ""}<button class="btn primary" id="ibopen">Öppna inkorgen</button></div>`);
+  $("#ibon", body).onchange = async (e) => { try { await api("/api/inbox", { method: "PUT", body: { enabled: e.target.checked } }); toast(e.target.checked ? "Inkorgen sorteras automatiskt" : "Automatisk sortering avstängd", "good"); } catch (err) { toast(err.message, "bad"); } };
+  $("#ibopen", body).onclick = () => { closeModal(); location.hash = "#/files/Inkorg"; };
+  if ($("#ibnow", body)) $("#ibnow", body).onclick = async () => { try { const r = await api("/api/inbox/sort", { method: "POST" }); toast(`${r.moved.length} filer sorterade`, "good"); closeModal(); inboxModal(); } catch (e) { toast(e.message, "bad"); } };
+  body.querySelectorAll("[data-ibundo]").forEach((b) => b.onclick = async () => {
+    try { await api("/api/inbox/undo", { method: "POST", body: { to: b.dataset.ibundo } }); toast("Tillbaka i inkorgen (mappen .ångrat)", "good"); closeModal(); inboxModal(); } catch (e) { toast(e.message, "bad"); }
+  });
+}
+
+async function myFolders() {
+  let d;
+  try { d = await api("/api/myfolders"); } catch (e) { toast(e.message, "bad"); return; }
+  const me = d.people.find((p) => p.id === "owner") || d.people[0];
+  const admin = !!d.people.find((p) => p.id === "owner");
+  const body = openModal(`<h3>📁 Mina mappar</h3>
+    <p class="hint">Egna mappar för det du vill spara på servern – nåbara från datorn och telefonen, med i backupen om du vill.</p>
+    <div class="card list">${d.folders.map((f) => `<div class="row"><div><div class="n">📁 ${esc(f.name)}</div>
+      <div class="m">${f.network ? `🌐 <code>${esc(d.address.windows)}\${esc(f.name)}</code> · ` : ""}${f.backup ? "🛟 i backupen · " : ""}${f.who === "family" ? "👨‍👩‍👧 hela familjen" : "🔒 bara du"}</div></div>
+      <div class="acts"><button class="btn" data-fopen="${esc(f.path)}">Öppna</button></div></div>`).join("") || `<div class="empty">Inga egna mappar än.</div>`}</div>
+    ${admin ? `<h4 style="margin:16px 0 6px">➕ Ny mapp</h4>
+    <label for="mfn">Namn</label><input id="mfn" placeholder="t.ex. Kvitton" maxlength="40" autocomplete="off">
+    <label class="radio"><input type="checkbox" id="mfnet" checked><div><b>Nåbar från datorn och telefonen</b><span>Dyker upp som en vanlig nätverksmapp i Utforskaren/Finder.</span></div></label>
+    <label class="radio"><input type="checkbox" id="mfbk" checked><div><b>Med i backupen</b><span>Följer med i nattens backup och syns i "Hur säkra är mina filer?".</span></div></label>
+    <label for="mfwho">Vem får se den?</label><select id="mfwho"><option value="me">Bara jag</option><option value="family">Hela familjen</option></select>
+    <div class="actions" style="margin-top:8px"><button class="btn primary" id="mfgo">Skapa mappen</button></div>` : ""}
+    <h4 style="margin:16px 0 6px">🔑 Ditt nätverkslösenord</h4>
+    <p class="hint">${me && me.has_password ? `Satt. Användarnamn: <b>${esc(me.smb_user)}</b>. Datorn frågar efter det första gången du öppnar en nätverksmapp.` : `Behövs för att nå mapparna från datorn. Användarnamn: <b>${esc(me ? me.smb_user : "")}</b>. Välj ett eget lösenord (minst 8 tecken) – det är skilt från WizzOS-lösenordet.`}</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="mfpw" type="password" autocomplete="new-password" placeholder="Nytt nätverkslösenord" style="max-width:260px"><button class="btn" id="mfpwgo">Spara</button></div>
+    ${d.folders.some((f) => f.network) ? `<p class="hint" style="margin-top:12px">Windows: skriv <code>${esc(d.address.windows)}</code> i Utforskarens adressfält. Mac: Finder → Gå → Anslut till server → <code>${esc(d.address.mac)}</code>.${d.running ? "" : " <b>Nätverksdelningen är inte igång än</b> – den startar när du har satt ditt nätverkslösenord."}</p>` : ""}
+    <div class="actions"><button class="btn" data-close>Stäng</button></div>`);
+  body.querySelectorAll("[data-fopen]").forEach((b) => b.onclick = () => { closeModal(); location.hash = "#/files" + b.dataset.fopen.replace(/^\/DATA/, ""); });
+  if ($("#mfgo", body)) $("#mfgo", body).onclick = async () => {
+    try {
+      await api("/api/myfolders", { method: "POST", body: { name: $("#mfn", body).value, network: $("#mfnet", body).checked, backup: $("#mfbk", body).checked, who: $("#mfwho", body).value } });
+      toast("Mappen är skapad", "good"); closeModal(); myFolders(); if (location.hash.startsWith("#/files")) route();
+    } catch (e) { toast(e.message, "bad"); }
+  };
+  $("#mfpwgo", body).onclick = async () => {
+    try { await api("/api/me/smb-password", { method: "POST", body: { password: $("#mfpw", body).value } }); toast("Nätverkslösenordet är sparat", "good"); closeModal(); myFolders(); } catch (e) { toast(e.message, "bad"); }
+  };
+}
+
 function migrateUnraid() {
   const body = openModal(`<h3>📦 Flytta in från Unraid</h3>
     <p class="hint">WizzOS gör om dina Unraid-appar till WizzOS-appar – samma image, portar och inställningar. Unraids mappar byts mot WizzOS egna (<code>/mnt/user/appdata/…</code> → <code>/DATA/AppData/…</code>).</p>
@@ -1868,7 +1929,111 @@ async function startApp() {
   api("/api/proxy").then((px) => {
     if (px.enabled && /^(100\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.)/.test(px.ip || "")) window.WIZZ_PRIVATE_DOMAIN = px.domain;
   }).catch(() => {});
+  pages.dela = sharePage;
+  pages.karta = homeMapPage;
+  if (typeof limitedPages !== "undefined") limitedPages.dela = sharePage;
+  // "Dela till WizzOS" från mobilens dela-meny (kräver https och WizzOS på hemskärmen)
+  if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js").catch(() => {});
   route();
+}
+
+/* ---------------- Karta över hem-IT ---------------- */
+
+async function homeMapPage(view) {
+  view.innerHTML = `<div class="head fade-in"><div><h1>🗺️ Ditt hem-IT</h1><p>Laddar …</p></div></div>`;
+  const d = await api("/api/homemap");
+  if (!d.configured || !d.ok) {
+    view.innerHTML = `<div class="head fade-in"><div><h1>🗺️ Ditt hem-IT</h1></div></div>
+      <div class="card fade-in" style="padding:18px"><p>${d.configured ? esc(d.error || "Ingen kontakt med Nestward.") : "Kartan visar alla dina servrar och datorer – den hämtar uppgifterna från Nestward."}</p>
+      <p class="hint">Koppla Nestward under <a href="#/settings">Inställningar → Nestward</a> (Nestward 0.11 eller senare).</p></div>`;
+    return;
+  }
+  const ms = d.machines;
+  const pct = (used, total) => total ? Math.round(used / total * 100) : 0;
+  const icon = (m) => m.wizzos ? "🪄" : { unraid: "🗄️", proxmox: "🧱", truenas: "🗄️", synology: "🗄️", haos: "🏠", raspios: "🍓", windows: "🪟", macos: "🍎" }[m.kind] || (m.vm ? "📦" : "🖥️");
+  const bar = (p) => `<div class="bk-bar" style="margin:4px 0"><i style="width:${p}%;background:${p >= 90 ? "var(--bad)" : p >= 75 ? "var(--warn)" : "var(--good)"}"></i></div>`;
+  const card = (m) => {
+    const memP = pct(m.mem_total - m.mem_free, m.mem_total), diskP = pct(m.disk_total - m.disk_free, m.disk_total);
+    return `<div class="card fade-in" style="padding:14px">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${icon(m)} ${esc(m.name)}</b>
+        <span title="${m.online ? "Svarar" : "Har inte hörts av sedan " + esc(fmtDate(Date.parse(m.last_seen) / 1000))}">${m.online ? "🟢" : "🔴"}</span></div>
+      <div class="m" style="margin:2px 0 8px">${esc([m.os, m.model].filter(Boolean).join(" · ") || m.kind)}${m.vm ? " · virtuell" : ""}${m.local ? " · Nestward" : ""}</div>
+      ${m.mem_total ? `<div class="m">Minne: ${fmtBytes(m.mem_free)} ledigt av ${fmtBytes(m.mem_total)}</div>${bar(memP)}` : ""}
+      ${m.disk_total ? `<div class="m">Disk: ${fmtBytes(m.disk_free)} ledigt av ${fmtBytes(m.disk_total)}</div>${bar(diskP)}` : ""}
+      <div class="m" style="margin-top:6px">${m.cores ? `${m.cores} kärnor · ` : ""}${m.services} tjänster · ${m.up} uppe${m.down ? ` · <b style="color:var(--bad)">${m.down} nere</b>` : ""}</div></div>`;
+  };
+  const real = ms.filter((m) => !m.vm), virt = ms.filter((m) => m.vm);
+  const online = ms.filter((m) => m.online && m.mem_total);
+  const bestMem = [...online].sort((a, b) => b.mem_free - a.mem_free)[0];
+  const bestDisk = [...online].sort((a, b) => b.disk_free - a.disk_free)[0];
+  const tight = online.filter((m) => pct(m.mem_total - m.mem_free, m.mem_total) >= 90 || pct(m.disk_total - m.disk_free, m.disk_total) >= 90);
+  const off = ms.filter((m) => !m.online);
+  view.innerHTML = `<div class="head fade-in"><div><h1>🗺️ Ditt hem-IT</h1><p>${ms.length} maskiner · ${fmtBytes(ms.reduce((a, m) => a + (m.mem_total || 0), 0))} minne · ${fmtBytes(ms.reduce((a, m) => a + (m.disk_total || 0), 0))} disk</p></div>
+      <div><a class="btn" href="${esc(safeUrl(d.url) || "#")}" target="_blank" rel="noopener">Öppna Nestward ↗</a></div></div>
+    <div class="card fade-in" style="padding:14px 16px;margin-bottom:14px">
+      ${bestMem ? `<p>🧠 Mest ledigt minne: <b>${esc(bestMem.name)}</b> (${fmtBytes(bestMem.mem_free)}) – bästa platsen för nästa tunga app.</p>` : ""}
+      ${bestDisk ? `<p>💾 Mest ledig disk: <b>${esc(bestDisk.name)}</b> (${fmtBytes(bestDisk.disk_free)}).</p>` : ""}
+      ${tight.length ? `<p>⚠️ Trångt på: ${tight.map((m) => `<b>${esc(m.name)}</b>`).join(", ")} (minne eller disk över 90 %).</p>` : "<p>✅ Ingen maskin är full.</p>"}
+      ${off.length ? `<p>🔴 Hörs inte av: ${off.map((m) => `<b>${esc(m.name)}</b>`).join(", ")}.</p>` : ""}</div>
+    ${real.length ? `<h2>Datorer och servrar <span class="count">${real.length}</span></h2><div class="map-grid">${real.map(card).join("")}</div>` : ""}
+    ${virt.length ? `<h2>Virtuella maskiner och molnservrar <span class="count">${virt.length}</span></h2><div class="map-grid">${virt.map(card).join("")}</div>` : ""}`;
+}
+
+/* ---------------- Dela till WizzOS ---------------- */
+
+async function sharePage(view) {
+  const failed = location.hash.endsWith("/ingen");
+  let items = [], text = "";
+  try {
+    const cache = await caches.open("wz-share");
+    for (const req of await cache.keys()) {
+      const r = await cache.match(req);
+      if (req.url.endsWith("/text")) text = await r.text();
+      else items.push({ req, name: decodeURIComponent(r.headers.get("X-Name") || "fil"), size: +(r.headers.get("X-Size") || 0), type: r.headers.get("Content-Type") || "" });
+    }
+  } catch { /* ingen cache = inget delat */ }
+  if (!items.length && !text) {
+    view.innerHTML = `<div class="head fade-in"><div><h1>📤 Dela till WizzOS</h1></div></div>
+      <div class="card fade-in" style="padding:18px"><p>${failed ? "Det du delade kom inte fram." : "Inget att ta emot just nu."}</p>
+      <p class="hint">Så gör du: öppna WizzOS i telefonens webbläsare (via https-adressen), välj <b>Lägg till på startskärmen</b> och öppna den en gång. Sedan finns <b>WizzOS</b> i telefonens dela-meny – för foton, kvitton, PDF:er och länkar.</p></div>`;
+    return;
+  }
+  const admin = !window.ME || window.ME.role === "admin";
+  let dests = [];
+  if (admin) {
+    try { dests = (await api("/api/myfolders")).folders.map((f) => ({ label: `📁 ${f.name}`, dir: f.path.replace(/^\/DATA/, "") })); } catch { /* inga egna mappar */ }
+    dests.push({ label: "📥 Inkorg (sorteras automatiskt)", dir: "/Inkorg" });
+  } else dests = [{ label: "📁 Mina filer", dir: "/" }];
+  view.innerHTML = `<div class="head fade-in"><div><h1>📤 Dela till WizzOS</h1><p>${items.length} ${items.length === 1 ? "fil" : "filer"}${text ? " + text" : ""}</p></div></div>
+    <div class="card list fade-in">${items.map((it) => `<div class="row"><div><div class="n">${it.type.startsWith("image/") ? "🖼️" : it.type.startsWith("video/") ? "🎬" : it.type === "application/pdf" ? "📄" : "📎"} ${esc(it.name)}</div><div class="m">${fmtBytes(it.size)}</div></div></div>`).join("")}
+      ${text ? `<div class="row"><div><div class="n">📝 Text/länk</div><div class="m">${esc(text.slice(0, 200))}</div></div></div>` : ""}</div>
+    <div class="card fade-in" style="padding:16px;margin-top:12px"><label for="shdest">Spara i</label>
+      <select id="shdest">${dests.map((d, i) => `<option value="${i}">${esc(d.label)}</option>`).join("")}</select>
+      <div class="actions"><button class="btn" id="shno">Släng</button><button class="btn primary" id="shgo">Spara</button></div></div>`;
+  const clear = async () => { try { await caches.delete("wz-share"); } catch { /* */ } };
+  $("#shno").onclick = async () => { await clear(); location.hash = "#/"; };
+  $("#shgo").onclick = async () => {
+    const dir = dests[+$("#shdest").value].dir;
+    const btn = $("#shgo"); btn.disabled = true;
+    const up = async (name, blob) => {
+      for (let n = 1; n < 50; n++) {
+        const nm = n === 1 ? name : name.replace(/(\.[^.]*)?$/, ` (${n})$1`);
+        const r = await fetch(`/api/files/upload?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(nm)}`, { method: "POST", headers: { "x-wizzos": "1" }, body: blob });
+        if (r.status === 409) continue;
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `Fel ${r.status}`);
+        return;
+      }
+    };
+    try {
+      const cache = await caches.open("wz-share");
+      let i = 0;
+      for (const it of items) { btn.textContent = `Sparar ${++i} av ${items.length} …`; await up(it.name, await (await cache.match(it.req)).blob()); }
+      if (text) await up(`Delat ${new Date().toISOString().slice(0, 16).replace("T", " ").replace(":", ".")}.txt`, new Blob([text], { type: "text/plain" }));
+      await clear();
+      toast("Sparat på servern ✓", "good");
+      location.hash = "#/files" + (dir === "/" ? "" : dir);
+    } catch (e) { toast(e.message, "bad"); btn.disabled = false; btn.textContent = "Spara"; }
+  };
 }
 
 window.addEventListener("hashchange", () => { closeModal(); route(); });

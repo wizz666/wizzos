@@ -11,9 +11,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (__version__, agent, ai, alerts, approvals, apps, auth, backup, card, config, cost, docindex, files, finder, goals, homeassistant, jobs, i18n,
+from . import (__version__, agent, ai, alerts, approvals, apps, auth, backup, card, config, cost, docindex, files, finder, goals, homeassistant, inbox, jobs, i18n,
                legacy, mail, mcp, oauth, paperless, proxy, security, selfupdate, shares, snapshots,
-               letter, migrate, move, nestward, safety, sleep, store, system, trial, updater, users)
+               letter, migrate, move, myfolders, nestward, safety, sleep, store, system, trial, updater, users)
 
 STATIC = Path(__file__).parent / "static"
 app = FastAPI(title="WizzOS", docs_url=None, redoc_url=None, openapi_url=None)
@@ -22,7 +22,7 @@ OPEN_PATHS = {"/api/state", "/api/login", "/api/setup"}
 
 # Det här får familj och gäster använda – allt annat är bara för ägaren och admin.
 _LIMITED = {("GET", "/api/me"), ("GET", "/api/me/apps"), ("POST", "/api/me/password"),
-            ("POST", "/api/logout")}
+            ("POST", "/api/logout"), ("POST", "/api/me/smb-password"), ("GET", "/api/myfolders")}
 _FAMILY_RE = re.compile(r"^/api/(files(/[a-z]+)?|trash|trash/[\w-]+(/restore)?)$")
 
 
@@ -90,6 +90,7 @@ async def startup():
     backup.start_scheduler()
     alerts.start_monitor()
     sleep.start_watch()
+    inbox.start_watch()
     agent.register()
     proxy.safe_apply()
     # Saknas en butik – eller är den hämtad före 2.2 (utan engelska texter) – hämta den.
@@ -715,6 +716,126 @@ def backup_settings(body: BackupSettingsIn):
         raise HTTPException(400, "Ogiltigt tak.")
     backup.save_cfg(**ch)
     return backup.public_cfg()
+
+
+# ---------- dela till WizzOS (mobilens dela-meny) ----------
+
+@app.get("/sw.js")
+def service_worker():
+    from fastapi.responses import FileResponse
+    return FileResponse(Path(__file__).parent / "static" / "sw.js", media_type="text/javascript",
+                        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
+
+
+@app.post("/share-in")
+def share_in_fallback():
+    # Bara om service workern inte hunnit installeras – då kom filerna aldrig fram.
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/#/dela/ingen", status_code=303)
+
+
+# ---------- karta över hem-IT ----------
+
+@app.get("/api/homemap")
+def homemap():
+    data = nestward.machines()
+    st = system.stats()
+    data["here"] = {"name": config.load().get("server_name") or system.hostname(), "hostname": system.hostname(),
+                    "mem_total": st["mem"]["total"], "mem_used": st["mem"]["used"]}
+    return data
+
+
+# ---------- smart inkorg ----------
+
+class InboxIn(BaseModel):
+    enabled: bool
+
+
+class InboxUndoIn(BaseModel):
+    to: str
+
+
+@app.get("/api/inbox")
+def inbox_get():
+    return inbox.summary()
+
+
+@app.put("/api/inbox")
+def inbox_set(body: InboxIn):
+    return inbox.set_enabled(body.enabled)
+
+
+@app.post("/api/inbox/sort")
+def inbox_sort():
+    return {"moved": inbox.sort_once(force=True)}
+
+
+@app.post("/api/inbox/undo")
+def inbox_undo(body: InboxUndoIn):
+    try:
+        return inbox.undo(body.to)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# ---------- egna mappar (med nätverksdelning) ----------
+
+class MyFolderIn(BaseModel):
+    name: str
+    network: bool = True
+    backup: bool = True
+    who: str = "me"
+
+
+class MyFolderUpd(BaseModel):
+    path: str
+    network: bool | None = None
+    who: str | None = None
+
+
+class SmbPassIn(BaseModel):
+    password: str
+
+
+@app.get("/api/myfolders")
+def myfolders_get(request: Request):
+    data = myfolders.summary()
+    u = _user(request)
+    if u["role"] != "admin":  # familjen ser bara mappar de får använda
+        data["folders"] = [f for f in data["folders"] if f.get("network") and f.get("who") == "family"]
+        data["people"] = [p for p in data["people"] if p["id"] == u["id"]]
+    return data
+
+
+@app.post("/api/myfolders")
+def myfolders_create(body: MyFolderIn):
+    try:
+        return myfolders.create(body.name, body.network, body.backup, body.who)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.put("/api/myfolders")
+def myfolders_update(body: MyFolderUpd):
+    try:
+        return myfolders.update(body.path, body.network, body.who)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/myfolders")
+def myfolders_forget(path: str):
+    myfolders.forget(path)
+    return {"ok": True}
+
+
+@app.post("/api/me/smb-password")
+def my_smb_password(body: SmbPassIn, request: Request):
+    try:
+        myfolders.set_password(_user(request)["id"], body.password)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
 
 
 # ---------- hur säkra är mina filer? (fotokoll + brandövning) ----------
