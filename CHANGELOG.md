@@ -1,5 +1,14 @@
 # Ändringar
 
+## 2.6.0
+
+- **Flytta WizzOS – hela servern med allt** (Backup → 📦 Flytta till ny server):
+  - **🩺 Hälsokoll först** – den nya servern kollar innan något görs om den klarar allt: minne (uppmätt på den gamla servern, sovande appar räknas in), disk, processortyp per app, upptagna portar, enheter och grafikkort. Grönt/gult/rött per app.
+  - **Direktflytt i samma nätverk** – den nya servern hämtar allt rakt från den gamla över nätverket (snabbt, utan molnet). Öppet i 6 timmar, bara för datorer i ditt eget nät med nyckeln i flyttkoden.
+  - **Allt följer med** – appar, viktiga mappar, familjens mappar och konton, AI-kopplingar, agenten, delningar, Home Assistant och övriga inställningar.
+  - **Kontroll efteråt** – varje app måste starta och antalet filer i varje mapp jämförs med den gamla servern. Den gamla servern rörs inte.
+- *English: Move WizzOS – a health check of the new server first (memory, disk, CPU type, ports, devices), direct transfer on the same network, everything comes along, and a check afterwards.*
+
 ## 2.5.0
 
 - **Sovande appar** (appens meny → 💤 Låt appen sova när den inte används) – en app som ingen använt på 30 min, 1 h eller 3 h stoppas och frigör minnet. Öppnar någon appens adress visas ”💤 vaknar …” och appen startar av sig själv; sidan laddas om när den är klar. Utan egen adress väcks appen när du öppnar den från WizzOS. Appar som jobbar i bakgrunden somnar aldrig. Sovande appar ger inga larm och hoppas över av agenten och nattuppdateringen. Av som standard.

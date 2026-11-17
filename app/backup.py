@@ -474,6 +474,16 @@ def restore_app(name: str, snap: str, log) -> None:
     tmp = TMP_ROOT / f"{name}-{stamp}"
     try:
         _restore_to(snap, tmp, log)
+        install_from_tree(name, tmp, log, stamp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def install_from_tree(name: str, tmp: Path, log, stamp: str | None = None) -> None:
+    """Ta en app (inställningar + data) ur ett återställt filträd och starta den här.
+    Används av backupåterställning och av direktflytt mellan servrar."""
+    stamp = stamp or time.strftime("%Y%m%d-%H%M%S")
+    if True:
         src_app = tmp / str(config.APPS_DIR).lstrip("/") / name
         src_data = tmp / str(config.DATA_ROOT).lstrip("/") / "AppData" / name
         if not (src_app / "docker-compose.yml").exists():
@@ -496,8 +506,6 @@ def restore_app(name: str, snap: str, log) -> None:
         log("Startar appen ...")
         jobs.run_cmd(apps._compose(name, "up", "-d", "--remove-orphans", "--pull", "missing"), log)
         proxy.safe_apply()
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ---------- återställningstest ----------

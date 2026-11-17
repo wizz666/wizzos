@@ -1271,13 +1271,23 @@ function moveOut() {
     <div class="steps-mini"><span>1</span> Välj ett flyttlösenord <span>2</span> Spara flyttkoden <span>3</span> Klistra in den på nya servern</div>
     <label for="mvp1">Flyttlösenord (minst 10 tecken)</label><input id="mvp1" type="password" autocomplete="new-password">
     <label for="mvp2">Samma lösenord igen</label><input id="mvp2" type="password" autocomplete="new-password">
-    <p class="hint">Koden innehåller nycklarna till backupen och är krypterad med lösenordet. Utan lösenordet är den oläslig. Den gamla servern påverkas inte.</p>
+    <label class="radio" style="margin-top:10px"><input type="checkbox" id="mvdirect"><div><b>Direktflytt – den nya servern står i samma nätverk</b>
+      <span>Den nya servern hämtar allt rakt härifrån över nätverket – mycket snabbare för stora mappar som foton, och utan molnet. Öppet i 6 timmar, bara för datorer i ditt eget nät.</span></div></label>
+    <div id="mvurlw" hidden><label for="mvurl">Den här serverns adress i nätverket (valfritt)</label><input id="mvurl" placeholder="http://192.168.1.20:8899"><p class="hint">Lämna tomt så väljer WizzOS själv.</p></div>
+    <div id="mvopen"></div>
+    <p class="hint">Koden innehåller nycklarna till backupen och är krypterad med lösenordet. Utan lösenordet är den oläslig. Den gamla servern påverkas inte – apparna pausas bara ett ögonblick medan de kopieras.</p>
     <div class="actions"><button class="btn" data-close>Avbryt</button><button class="btn primary" id="mvgo">Skapa flyttkod</button></div>`);
+  $("#mvdirect", body).onchange = (e) => { $("#mvurlw", body).hidden = !e.target.checked; };
+  api("/api/move/direct").then((st) => {
+    if (!st.open) return;
+    $("#mvopen", body).innerHTML = `<p class="hint">🔓 Direktflytt är öppen till ${esc(fmtDate(st.until))}. <button class="btn" id="mvclose">Stäng direktflytten</button></p>`;
+    $("#mvclose", body).onclick = async () => { await api("/api/move/direct/close", { method: "POST" }); $("#mvopen", body).innerHTML = ""; toast("Direktflytten är stängd", "good"); };
+  }).catch(() => {});
   $("#mvgo", body).onclick = async () => {
     const a = $("#mvp1", body).value, b = $("#mvp2", body).value;
     if (a !== b) { toast("Lösenorden är inte lika", "bad"); return; }
     try {
-      const r = await api("/api/move/export", { method: "POST", body: { passphrase: a } });
+      const r = await api("/api/move/export", { method: "POST", body: { passphrase: a, direct: $("#mvdirect", body).checked, url: $("#mvurl", body).value.trim() } });
       watchJob(r.job, { title: "Förbereder flytt", onDone: (j) => { if (j.state === "done" && j.result?.code) setTimeout(() => showMoveCode(j.result.code), 600); } });
     } catch (e) { toast(e.message, "bad"); }
   };
@@ -1305,16 +1315,30 @@ function moveIn() {
     <div class="actions"><button class="btn" data-close>Avbryt</button><button class="btn primary" id="migo">Fortsätt</button></div>`);
   $("#migo", body).onclick = async () => {
     const code = $("#mic", body).value, passphrase = $("#mip", body).value;
+    const go = $("#migo", body); go.disabled = true; go.textContent = "Kollar den här servern …";
     let pv;
-    try { pv = await api("/api/move/preview", { method: "POST", body: { code, passphrase } }); } catch (e) { toast(e.message, "bad"); return; }
-    const ok = await confirmBox("Flytta hit?", `Från: ${pv.from || "okänd server"} (kod skapad ${pv.made ? fmtDate(pv.made) : "?"}). Backup: ${pv.target}. `
-      + `WizzOS tar över inställningarna, ansluter till backupen och återställer alla appar. Det kan ta en stund.`
-      + (pv.proxy_was_on ? ` Egen adress (${pv.proxy_domain}) förifylls – du slår på den själv när du vill att adresserna ska peka hit.` : ""), "Flytta hit allt");
-    if (!ok) return;
-    try {
-      const r = await api("/api/move/import", { method: "POST", body: { code, passphrase } });
-      watchJob(r.job, { title: "Flyttar hit servern", onDone: () => { storeState.data = null; } });
-    } catch (e) { toast(e.message, "bad"); }
+    try { pv = await api("/api/move/preview", { method: "POST", body: { code, passphrase } }); } catch (e) { toast(e.message, "bad"); go.disabled = false; go.textContent = "Fortsätt"; return; }
+    const dot = { ok: "🟢", warn: "🟡", bad: "🔴" };
+    const head = { ok: "Den här servern klarar allt 🎉", warn: "Det går, men kolla det gula först", bad: "Något hindrar flytten – se det röda" }[pv.level];
+    body.innerHTML = `<h3>🩺 Hälsokoll: ${esc(head)}</h3>
+      <p class="hint">Från <b>${esc(pv.from || "okänd server")}</b> (kod skapad ${pv.made ? esc(fmtDate(pv.made)) : "?"}). Inget har ändrats än.</p>
+      <div class="card list">${pv.checks.map((c) => `<div class="row"><div><div class="n">${dot[c.level]} ${esc(c.title)}</div><div class="m">${esc(c.msg)}</div></div></div>`).join("")}</div>
+      <h4 style="margin:14px 0 6px">Appar (${pv.apps.length})</h4>
+      <div class="card list">${pv.apps.map((x) => `<div class="row"><div><div class="n">${dot[x.level]} ${esc(x.title)}${x.asleep ? " 💤" : ""}</div>
+        <div class="m">${x.mem_mb ? `${x.mem_mb} MB minne · ` : ""}${fmtBytes(x.data_bytes || 0)}${x.notes.length ? " – " + x.notes.map(esc).join(" ") : ""}</div></div></div>`).join("") || `<div class="empty">Inga appar.</div>`}</div>
+      ${pv.folders.length ? `<h4 style="margin:14px 0 6px">Mappar</h4><div class="card list">${pv.folders.map((f) => `<div class="row"><div><div class="n">📁 ${esc(f.path)}</div><div class="m">${fmtBytes(f.size)} · ${f.files} filer</div></div></div>`).join("")}</div>` : ""}
+      ${pv.direct ? `<label class="radio" style="margin-top:10px"><input type="checkbox" id="midirect" checked><div><b>Hämta direkt från den gamla servern</b><span>Snabbast i samma nätverk. Avmarkera för att använda backupen.</span></div></label>` : ""}
+      ${pv.proxy_was_on ? `<p class="hint">Egen adress (${esc(pv.proxy_domain)}) förifylls – du slår på den själv när adresserna ska peka hit.</p>` : ""}
+      <div class="actions"><button class="btn" data-close>Avbryt</button><button class="btn primary" id="mirun" ${pv.level === "bad" ? "" : ""}>${pv.level === "bad" ? "Flytta ändå" : "Flytta hit allt"}</button></div>`;
+    body.querySelectorAll("[data-close]").forEach((b) => b.onclick = () => closeModal());
+    $("#mirun", body).onclick = async () => {
+      if (pv.level === "bad" && !(await confirmBox("Flytta ändå?", "Hälsokollen hittade något rött. Det som inte passar kan misslyckas – resten flyttas.", "Flytta ändå"))) return;
+      try {
+        const r = await api("/api/move/import", { method: "POST", body: { code, passphrase, direct: $("#midirect", body) ? $("#midirect", body).checked : false } });
+        closeModal();
+        watchJob(r.job, { title: "Flyttar hit servern", onDone: () => { storeState.data = null; } });
+      } catch (e) { toast(e.message, "bad"); }
+    };
   };
 }
 

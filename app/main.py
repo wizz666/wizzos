@@ -1158,26 +1158,83 @@ def qr(text: str):
 
 class MoveExportIn(BaseModel):
     passphrase: str
+    direct: bool = False
+    url: str = ""
 
 
 class MoveImportIn(BaseModel):
     code: str
     passphrase: str
+    direct: bool = True
 
 
 @app.post("/api/move/export")
 def move_export(body: MoveExportIn):
-    return {"job": move.export_job(body.passphrase)}
+    try:
+        return {"job": move.export_job(body.passphrase, body.direct, body.url)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.post("/api/move/preview")
 def move_preview(body: MoveImportIn):
-    return move.preview(body.code, body.passphrase)
+    try:
+        return move.preview(body.code, body.passphrase)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.post("/api/move/import")
 def move_import(body: MoveImportIn):
-    return {"job": move.import_job(body.code, body.passphrase)}
+    try:
+        return {"job": move.import_job(body.code, body.passphrase, body.direct)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/move/direct")
+def move_direct_status():
+    d = config.load().get("move_direct") or {}
+    import time as _t
+    return {"open": bool(d) and _t.time() < d.get("until", 0), "until": d.get("until")}
+
+
+@app.post("/api/move/direct/close")
+def move_direct_close():
+    move.close_direct()
+    return {"ok": True}
+
+
+def _direct_guard(token: str, request: Request) -> None:
+    # Bara datorer i det egna nätet (inte via Cloudflare) och bara med nyckeln från flyttkoden.
+    if auth.via_tunnel(request) or not auth._local_peer(request) or not move.direct_ok(token):
+        raise HTTPException(404)
+
+
+@app.get("/move/d/{token}/ping")
+def move_direct_ping(token: str, request: Request):
+    _direct_guard(token, request)
+    return {"ok": True, "from": config.load().get("server_name", "")}
+
+
+@app.get("/move/d/{token}/app/{name}")
+def move_direct_app(token: str, name: str, request: Request):
+    from fastapi.responses import StreamingResponse
+    _direct_guard(token, request)
+    try:
+        return StreamingResponse(move.stream_app(name), media_type="application/x-tar")
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/move/d/{token}/folder")
+def move_direct_folder(token: str, path: str, request: Request):
+    from fastapi.responses import StreamingResponse
+    _direct_guard(token, request)
+    try:
+        return StreamingResponse(move.stream_folder(path), media_type="application/x-tar")
+    except ValueError as e:
+        raise HTTPException(404, str(e))
 
 
 # ---------- Nestward ----------
