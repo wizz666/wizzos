@@ -164,14 +164,39 @@ def _apps_text() -> str:
     return "\n".join(rows) or "Inga appar installerade."
 
 
+def _store_title(key: str) -> str | None:
+    """Appens namn i butiken, eller None om nyckeln inte finns där."""
+    from . import store
+    try:
+        app = store.find(config.load()["stores"], key)
+    except Exception:  # noqa: BLE001
+        return None
+    return (store.localized(app).get("title") or key.split("/")[-1]) if app else None
+
+
 def _buttons_for(reply: str) -> tuple[str, list[list[dict]]]:
+    from urllib.parse import quote
+
+    from . import approvals
     names = {a["name"] for a in apps.installed()["apps"]}
-    rows, seen = [], set()
+    rows, seen, hints = [], set(), []
     for verb, target in _TAG.findall(reply):
-        if verb in VERBS and target in names and (verb, target) not in seen and len(rows) < 6:
-            seen.add((verb, target))
+        if (verb, target) in seen or len(rows) >= 6:
+            continue
+        seen.add((verb, target))
+        if verb == "installera":
+            # Installation kräver val (portar, lösenord …) – knappen öppnar appen i WizzOS-butiken.
+            title = _store_title(target)
+            if not title:
+                continue
+            base = approvals.base_url()
+            if base.startswith(("https://", "http://")):
+                rows.append([{"text": f"📦 Installera {title}", "url": f"{base}/#/install/{quote(target, safe='')}"}])
+            else:
+                hints.append(f"👉 Installera {title} från Appbutiken i WizzOS.")
+        elif verb in VERBS and target in names:
             rows.append([{"text": f"{VERBS[verb]} {target}", "callback_data": f"a:{verb}:{target}"[:64]}])
-    text = _TAG.sub("", reply).strip()
+    text = "\n\n".join(p for p in (_TAG.sub("", reply).strip(), *hints) if p)
     return text, rows
 
 
@@ -193,7 +218,13 @@ def _ask_ai(chat_id: int, text: str) -> None:
     hist.append({"role": "assistant", "content": reply})
     del hist[:-12]
     body, rows = _buttons_for(reply)
-    send(chat_id, body or "…", rows or None)
+    try:
+        send(chat_id, body or "…", rows or None)
+    except RuntimeError:
+        # Telegram kan neka en knapp (t.ex. en adress den inte godtar) – skicka texten ändå.
+        links = [b["text"] for r in rows for b in r if "url" in b]
+        extra = "".join(f"\n\n👉 {t.removeprefix('📦 ')} från Appbutiken i WizzOS." for t in links)
+        send(chat_id, (body or "…") + extra, [r for r in rows if not any("url" in b for b in r)] or None)
 
 
 def _do(chat_id: int, verb: str, name: str) -> None:

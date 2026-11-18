@@ -1897,8 +1897,16 @@ $("#ai-input").addEventListener("input", (e) => { e.target.style.height = "auto"
 
 async function route() {
   clearTimers(); closeMenu(); $("#view").classList.remove("settled");
-  const page = (location.hash.replace(/^#\/?/, "").split("/")[0]) || "home";
   const P = window.ME && window.ME.role !== "admin" ? limitedPages : pages;
+  // Länk från Telegram: #/install/<butiksnyckel> öppnar appen i Appbutiken.
+  if (location.hash.startsWith("#/install/")) {
+    const key = decodeURIComponent(location.hash.slice("#/install/".length));
+    history.replaceState(null, "", "#/store");
+    await route();
+    if (P === pages && key) appDetails(key);
+    return;
+  }
+  const page = (location.hash.replace(/^#\/?/, "").split("/")[0]) || "home";
   const fn = P[page] || P.home;
   $$(".side a[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === (P[page] ? page : "home")));
   const view = $("#view");
