@@ -10,6 +10,7 @@ Hemligheter (lösenord, nycklar) maskeras innan något skickas iväg.
 """
 from __future__ import annotations
 
+import json
 import re
 
 import httpx
@@ -286,6 +287,15 @@ def complete(messages: list[dict], c: dict | None = None, max_tokens: int = 1200
     return text
 
 
+def errorish(text: str) -> str:
+    """Felmeddelandet ur ett JSON-felsvar (LiteLLM/OpenAI-format), annars texten."""
+    try:
+        err = json.loads(text).get("error")
+        return str(err.get("message") if isinstance(err, dict) else err or text)
+    except (ValueError, AttributeError):
+        return text
+
+
 GHOST_PHRASES = {"tack för att du tittade", "tack för att ni tittade", "tack för att du lyssnade",
                  "thank you for watching", "thanks for watching", "you", "tack", "musik"}
 
@@ -297,11 +307,18 @@ def transcribe(audio: bytes, filename: str = "voice.ogg", c: dict | None = None)
     if not public_cfg()["configured"]:
         raise ValueError("AI-hjälpen är inte inställd än (Inställningar → AI-hjälp).")
     model = c.get("speech_model") or DEFAULTS["speech_model"]
+    # Telegram sparar röstmeddelanden som .oga – samma Ogg-format, men Whisper känner bara igen .ogg.
+    stem, _, ext = filename.rpartition(".")
+    if not stem or ext.lower() in ("oga", "opus", ""):
+        filename = (stem or "voice") + ".ogg"
     with _client(c, json_body=False) as cl:
         r = cl.post("/audio/transcriptions", files={"file": (filename, audio, "audio/ogg")},
                     data={"model": model, "language": i18n.server_lang()})
-    if r.status_code in (400, 404) and model in r.text:
+    if r.status_code in (400, 404) and re.search(r"invalid model|model.{0,40}not found|no deployments", r.text, re.I):
         raise RuntimeError(f"AI-tjänsten har ingen talmodell som heter {model}.")
+    if r.status_code == 400:
+        detail = re.sub(r"^.*?Exception - ", "", errorish(r.text))
+        raise RuntimeError(f"Talmodellen kunde inte läsa ljudet: {detail[:200]}")
     _check(r, c)
     try:
         text = (r.json().get("text") or "").strip()
