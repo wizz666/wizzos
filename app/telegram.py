@@ -238,6 +238,33 @@ def _ask_ai(chat_id: int, text: str) -> None:
         send(chat_id, (body or "…") + extra, [r for r in rows if not any("url" in b for b in r)] or None)
 
 
+MAX_VOICE_SECONDS = 120
+
+
+def _voice_to_text(chat_id: int, voice: dict) -> str:
+    """Hämtar röstmeddelandet från Telegram och gör om det till text. Tom sträng om det inte gick."""
+    from . import ai
+    if (voice.get("duration") or 0) > MAX_VOICE_SECONDS or (voice.get("file_size") or 0) > 10_000_000:
+        send(chat_id, "Röstmeddelandet är för långt – håll det under två minuter.")
+        return ""
+    try:
+        _call("sendChatAction", chat_id=chat_id, action="typing")
+        f = _call("getFile", file_id=voice["file_id"])
+        path = f["file_path"]
+        r = httpx.get(f"{API}/file/bot{cfg()['token']}/{path}", timeout=30)
+        if r.status_code != 200:
+            raise RuntimeError("Telegram lämnade inte ut ljudfilen.")
+        text = ai.transcribe(r.content, path.rsplit("/", 1)[-1] or "voice.ogg")
+    except (RuntimeError, ValueError) as e:
+        send(chat_id, f"Jag kunde inte lyssna på röstmeddelandet: {e}")
+        return ""
+    except Exception:  # noqa: BLE001 – nätverksfel; skriv aldrig ut adressen (den innehåller botnyckeln)
+        send(chat_id, "Jag kunde inte lyssna på röstmeddelandet (nätverksfel). Försök igen om en stund.")
+        return ""
+    send(chat_id, f"🎙️ ”{text[:500]}”")
+    return text[:2000]
+
+
 def _do(chat_id: int, verb: str, name: str) -> None:
     from . import backup, jobs, proxy
     a = next((x for x in apps.installed()["apps"] if x["name"] == name), None)
@@ -301,7 +328,8 @@ def _handle(upd: dict) -> None:
     msg = upd.get("message") or {}
     chat_id = msg.get("chat", {}).get("id")
     text = (msg.get("text") or "").strip()
-    if not chat_id or not text:
+    voice = msg.get("voice") or msg.get("audio")
+    if not chat_id or not (text or voice):
         return
     if not _paired(chat_id):
         pair = cfg().get("pair") or {}
@@ -311,11 +339,15 @@ def _handle(upd: dict) -> None:
             _save(chats=[*cfg()["chats"], {"id": chat_id, "name": name[:40]}], pair=None)
             send(chat_id, "✅ Kopplad! Nu kan du prata med din server här. Skriv /hjalp för att se vad jag kan.")
         return  # okända chattar får inget svar alls
+    if not text:  # röstmeddelande från en kopplad chatt
+        text = _voice_to_text(chat_id, voice)
+        if not text:
+            return
     cmd = text.split()[0].split("@")[0].lower()
     if cmd in ("/start", "/hjalp", "/hjälp", "/help"):
         send(chat_id, "Jag är din WizzOS-server 👋\n\n/status – hur servern mår\n/appar – alla appar\n/backup – senaste backupen\n\n"
                       "Allt annat du skriver svarar AI-hjälpen på, t.ex. ”varför är Immich långsam?” eller ”vilken app passar för recept?”. "
-                      "Föreslagna åtgärder blir knappar.")
+                      "Föreslagna åtgärder blir knappar.\n\n🎙️ Du kan också skicka ett röstmeddelande.")
     elif cmd == "/status":
         send(chat_id, _status_text())
     elif cmd == "/appar":

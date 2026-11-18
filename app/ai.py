@@ -16,7 +16,7 @@ import httpx
 
 from . import apps, backup, config, proxy, snapshots, store, system
 
-DEFAULTS = {"base_url": "", "api_key": "", "model": "gratis-chatt",
+DEFAULTS = {"base_url": "", "api_key": "", "model": "gratis-chatt", "speech_model": "gratis-tal",
             "cf_id": "", "cf_secret": "", "enabled": False}
 SECRET_KEYS = ("api_key", "cf_secret")
 
@@ -77,7 +77,7 @@ def public_cfg() -> dict:
 
 def save(changes: dict) -> dict:
     c = cfg()
-    for k in ("base_url", "model", "cf_id"):
+    for k in ("base_url", "model", "speech_model", "cf_id"):
         if changes.get(k) is not None:
             c[k] = str(changes[k]).strip()
     for k in SECRET_KEYS:
@@ -242,8 +242,8 @@ def build_context(question: str, history_text: str, app: str | None, extra: str 
 
 # ---------- anrop ----------
 
-def _client(c: dict) -> httpx.Client:
-    headers = {"Content-Type": "application/json"}
+def _client(c: dict, json_body: bool = True) -> httpx.Client:
+    headers = {"Content-Type": "application/json"} if json_body else {}
     if c.get("api_key"):
         headers["Authorization"] = f"Bearer {c['api_key']}"
     if c.get("cf_id") and c.get("cf_secret"):
@@ -253,11 +253,7 @@ def _client(c: dict) -> httpx.Client:
                         follow_redirects=False)
 
 
-def complete(messages: list[dict], c: dict | None = None, max_tokens: int = 1200) -> str:
-    c = c or cfg()
-    with _client(c) as cl:
-        r = cl.post("/chat/completions", json={"model": c["model"], "messages": messages,
-                                               "temperature": 0.3, "max_tokens": max_tokens})
+def _check(r: httpx.Response, c: dict) -> None:
     if r.status_code in (301, 302, 303) or "cloudflareaccess" in r.headers.get("location", ""):
         if not (c.get("cf_id") and c.get("cf_secret")):
             raise RuntimeError("Adressen skyddas av Cloudflare Access, men ingen servicenyckel är sparad. "
@@ -270,6 +266,14 @@ def complete(messages: list[dict], c: dict | None = None, max_tokens: int = 1200
         raise RuntimeError("AI-tjänsten har nått sin gräns för stunden. Försök igen om en liten stund.")
     if r.status_code >= 400:
         raise RuntimeError(f"AI-tjänsten svarade med fel {r.status_code}: {r.text[:200]}")
+
+
+def complete(messages: list[dict], c: dict | None = None, max_tokens: int = 1200) -> str:
+    c = c or cfg()
+    with _client(c) as cl:
+        r = cl.post("/chat/completions", json={"model": c["model"], "messages": messages,
+                                               "temperature": 0.3, "max_tokens": max_tokens})
+    _check(r, c)
     try:
         msg = r.json()["choices"][0]["message"]
     except (ValueError, KeyError, IndexError):
@@ -279,6 +283,34 @@ def complete(messages: list[dict], c: dict | None = None, max_tokens: int = 1200
         raise RuntimeError("Modellen svarade tomt. Försök igen.")
     # Vissa modeller skriver ut sitt "tänkande" – ta bort det.
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+    return text
+
+
+GHOST_PHRASES = {"tack för att du tittade", "tack för att ni tittade", "tack för att du lyssnade",
+                 "thank you for watching", "thanks for watching", "you", "tack", "musik"}
+
+
+def transcribe(audio: bytes, filename: str = "voice.ogg", c: dict | None = None) -> str:
+    """Tal till text (t.ex. ett röstmeddelande) via AI-tjänstens talmodell, standard "gratis-tal"."""
+    from . import i18n
+    c = c or cfg()
+    if not public_cfg()["configured"]:
+        raise ValueError("AI-hjälpen är inte inställd än (Inställningar → AI-hjälp).")
+    model = c.get("speech_model") or DEFAULTS["speech_model"]
+    with _client(c, json_body=False) as cl:
+        r = cl.post("/audio/transcriptions", files={"file": (filename, audio, "audio/ogg")},
+                    data={"model": model, "language": i18n.server_lang()})
+    if r.status_code in (400, 404) and model in r.text:
+        raise RuntimeError(f"AI-tjänsten har ingen talmodell som heter {model}.")
+    _check(r, c)
+    try:
+        text = (r.json().get("text") or "").strip()
+    except ValueError:
+        raise RuntimeError("Talmodellen gav ett svar som inte gick att läsa.")
+    # Whisper "hör" ibland textremsor från tv när ljudet är tyst – räkna det som tomt.
+    ghost = re.sub(r"[\W_]+", " ", text.lower()).strip()
+    if not text or ghost in GHOST_PHRASES or ghost.startswith(("textning", "undertext", "svensktextning")):
+        raise RuntimeError("Jag hörde inget i ljudet.")
     return text
 
 
