@@ -6,3 +6,5 @@ psutil==6.1.1
 cryptography==44.0.0
 segno==1.6.1
 pypdf==6.21.4
+piper-tts==1.8.0
+soundfile==0.14.0

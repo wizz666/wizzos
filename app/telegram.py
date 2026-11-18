@@ -31,7 +31,8 @@ VERBS = {"starta": "▶️ Starta", "stoppa": "⏹ Stoppa", "starta-om": "🔄 S
 
 
 def cfg() -> dict:
-    return {"token": "", "chats": [], "alerts": True, "bot": "", **(config.load().get("telegram") or {})}
+    return {"token": "", "chats": [], "alerts": True, "bot": "", "voice_replies": True,
+            **(config.load().get("telegram") or {})}
 
 
 def _save(**ch) -> dict:
@@ -211,7 +212,23 @@ def _buttons_for(reply: str) -> tuple[str, list[list[dict]]]:
     return text, rows
 
 
-def _ask_ai(chat_id: int, text: str) -> None:
+def _send_voice(chat_id: int, text: str) -> None:
+    """Läser upp svaret som röstmeddelande. Går det inte finns texten ändå redan i chatten."""
+    from . import speech
+    try:
+        _call("sendChatAction", chat_id=chat_id, action="record_voice")
+        audio = speech.speak(text)
+        r = httpx.post(f"{API}/bot{cfg()['token']}/sendVoice", data={"chat_id": str(chat_id)},
+                       files={"voice": ("svar.ogg", audio, "audio/ogg")}, timeout=60)
+        if not r.json().get("ok"):
+            raise RuntimeError(r.json().get("description") or "sendVoice misslyckades")
+    except httpx.HTTPError:  # skriv aldrig ut adressen – den innehåller botnyckeln
+        print("telegram: röstsvar misslyckades: nätverksfel")
+    except Exception as e:  # noqa: BLE001
+        print(f"telegram: röstsvar misslyckades: {type(e).__name__}: {str(e)[:150]}")
+
+
+def _ask_ai(chat_id: int, text: str, spoken: bool = False) -> None:
     from . import ai
     hist = _history.setdefault(chat_id, [])
     hist.append({"role": "user", "content": text[:2000]})
@@ -231,6 +248,8 @@ def _ask_ai(chat_id: int, text: str) -> None:
     body, rows = _buttons_for(reply)
     try:
         send(chat_id, body or "…", rows or None)
+        if spoken and body and cfg().get("voice_replies", True):
+            _send_voice(chat_id, body)
     except RuntimeError:
         # Telegram kan neka en knapp (t.ex. en adress den inte godtar) – skicka texten ändå.
         links = [b["text"] for r in rows for b in r if "url" in b]
@@ -339,7 +358,8 @@ def _handle(upd: dict) -> None:
             _save(chats=[*cfg()["chats"], {"id": chat_id, "name": name[:40]}], pair=None)
             send(chat_id, "✅ Kopplad! Nu kan du prata med din server här. Skriv /hjalp för att se vad jag kan.")
         return  # okända chattar får inget svar alls
-    if not text:  # röstmeddelande från en kopplad chatt
+    spoken = not text
+    if spoken:  # röstmeddelande från en kopplad chatt
         text = _voice_to_text(chat_id, voice)
         if not text:
             return
@@ -347,18 +367,24 @@ def _handle(upd: dict) -> None:
     if cmd in ("/start", "/hjalp", "/hjälp", "/help"):
         send(chat_id, "Jag är din WizzOS-server 👋\n\n/status – hur servern mår\n/appar – alla appar\n/backup – senaste backupen\n\n"
                       "Allt annat du skriver svarar AI-hjälpen på, t.ex. ”varför är Immich långsam?” eller ”vilken app passar för recept?”. "
-                      "Föreslagna åtgärder blir knappar.\n\n🎙️ Du kan också skicka ett röstmeddelande.")
+                      "Föreslagna åtgärder blir knappar.\n\n🎙️ Du kan också skicka ett röstmeddelande – då svarar jag "
+                      "med röst också. /rost slår av eller på röstsvaren.")
     elif cmd == "/status":
         send(chat_id, _status_text())
     elif cmd == "/appar":
         send(chat_id, _apps_text())
     elif cmd == "/backup":
         send(chat_id, _status_text().split("\n")[-1])
+    elif cmd in ("/rost", "/röst"):
+        on = not cfg().get("voice_replies", True)
+        _save(voice_replies=on)
+        send(chat_id, "🔊 Röstsvar på – när du pratar in svarar jag med röst också." if on
+             else "🔇 Röstsvar av – jag svarar bara med text.")
     elif cmd == "/glom":
         _history.pop(chat_id, None)
         send(chat_id, "Jag har glömt vår konversation.")
     else:
-        _ask_ai(chat_id, text)
+        _ask_ai(chat_id, text, spoken)
 
 
 def _loop() -> None:
