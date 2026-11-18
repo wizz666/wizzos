@@ -174,10 +174,21 @@ def _store_title(key: str) -> str | None:
     return (store.localized(app).get("title") or key.split("/")[-1]) if app else None
 
 
+def _ui_url() -> str:
+    """Adressen där WizzOS-gränssnittet nås (inte den publika AI-adressen – den visar bara /mcp och /approve)."""
+    import os
+
+    from . import proxy
+    base = proxy.wizz_url() or config.load().get("phone_base") or ""
+    if not base:
+        ip = proxy.listen_ip()
+        if ip not in ("", "0.0.0.0", "127.0.0.1", "::"):
+            base = f"http://{ip}:{os.environ.get('WIZZOS_PORT', '8899')}"
+    return base.rstrip("/")
+
+
 def _buttons_for(reply: str) -> tuple[str, list[list[dict]]]:
     from urllib.parse import quote
-
-    from . import approvals
     names = {a["name"] for a in apps.installed()["apps"]}
     rows, seen, hints = [], set(), []
     for verb, target in _TAG.findall(reply):
@@ -189,7 +200,7 @@ def _buttons_for(reply: str) -> tuple[str, list[list[dict]]]:
             title = _store_title(target)
             if not title:
                 continue
-            base = approvals.base_url()
+            base = _ui_url()
             if base.startswith(("https://", "http://")):
                 rows.append([{"text": f"📦 Installera {title}", "url": f"{base}/#/install/{quote(target, safe='')}"}])
             else:
