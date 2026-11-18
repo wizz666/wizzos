@@ -18,7 +18,7 @@ import httpx
 from . import apps, backup, config, proxy, snapshots, store, system
 
 DEFAULTS = {"base_url": "", "api_key": "", "model": "gratis-chatt", "speech_model": "gratis-tal",
-            "cf_id": "", "cf_secret": "", "enabled": False}
+            "voice_model": "gratis-rost", "voice": "Kore", "cf_id": "", "cf_secret": "", "enabled": False}
 SECRET_KEYS = ("api_key", "cf_secret")
 
 SYSTEM_PROMPT = """Du är WizzOS-assistenten, inbyggd i en privat hemserver som heter WizzOS.
@@ -78,7 +78,7 @@ def public_cfg() -> dict:
 
 def save(changes: dict) -> dict:
     c = cfg()
-    for k in ("base_url", "model", "speech_model", "cf_id"):
+    for k in ("base_url", "model", "speech_model", "voice_model", "voice", "cf_id"):
         if changes.get(k) is not None:
             c[k] = str(changes[k]).strip()
     for k in SECRET_KEYS:
@@ -329,6 +329,21 @@ def transcribe(audio: bytes, filename: str = "voice.ogg", c: dict | None = None)
     if not text or ghost in GHOST_PHRASES or ghost.startswith(("textning", "undertext", "svensktextning")):
         raise RuntimeError("Jag hörde inget i ljudet.")
     return text
+
+
+def synthesize(text: str, c: dict | None = None) -> bytes:
+    """Text till tal via AI-tjänstens röstmodell (standard "gratis-rost", Gemini via LiteLLM). Ger WAV-ljud."""
+    c = c or cfg()
+    if not public_cfg()["configured"]:
+        raise ValueError("AI-hjälpen är inte inställd än.")
+    with _client(c) as cl:
+        r = cl.post("/audio/speech", json={"model": c.get("voice_model") or DEFAULTS["voice_model"],
+                                           "input": text[:4000], "voice": c.get("voice") or DEFAULTS["voice"],
+                                           "response_format": "wav"}, timeout=90)
+    _check(r, c)
+    if not r.content or "json" in r.headers.get("content-type", ""):
+        raise RuntimeError("Röstmodellen gav inget ljud.")
+    return r.content
 
 
 def test(c: dict | None = None) -> str:

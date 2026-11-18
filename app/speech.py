@@ -1,4 +1,4 @@
-"""Text till tal med Piper – körs lokalt i WizzOS, utan konto eller nyckel.
+"""Text till tal: AI-tjänstens röst (Gemini via LiteLLM) i första hand, Piper lokalt som reserv.
 
 Rösten (ca 60 MB) hämtas från Piper-projektets röstbibliotek första gången den behövs och sparas
 i /DATA/WizzOS/voices. Den hålls i minnet medan den används och släpps efter 10 minuter utan
@@ -89,26 +89,51 @@ def speakable(text: str) -> str:
     return text.strip()
 
 
-def speak(text: str, lang: str | None = None) -> bytes:
-    """Returnerar ett röstmeddelande (Ogg/Opus, 48 kHz) som Telegram visar som röst."""
+def _ogg(pcm, rate: int) -> bytes:
+    """Mono-ljud (float32) -> Ogg/Opus i 48 kHz, som Telegram visar som röstmeddelande."""
     import numpy as np
     import soundfile as sf
+    n = int(len(pcm) * 48000 / rate)
+    audio = np.interp(np.linspace(0, len(pcm) - 1, n), np.arange(len(pcm)), pcm).astype(np.float32)
+    buf = io.BytesIO()
+    sf.write(buf, audio, 48000, format="OGG", subtype="OPUS")
+    return buf.getvalue()
 
-    from . import i18n
-    lang = lang if lang in VOICES else (i18n.server_lang() if i18n.server_lang() in VOICES else "sv")
-    words = speakable(text)
-    if not words:
-        raise ValueError("Inget att läsa upp.")
+
+def _piper(words: str, lang: str) -> bytes:
+    import numpy as np
     with _lock:
         voice = _voice(lang)
         chunks = list(voice.synthesize(words))
         _loaded["used"] = time.time()
     if not chunks:
         raise RuntimeError("Rösten gav inget ljud.")
-    rate = chunks[0].sample_rate
     pcm = np.frombuffer(b"".join(c.audio_int16_bytes for c in chunks), dtype=np.int16).astype(np.float32) / 32768
-    n = int(len(pcm) * 48000 / rate)
-    audio = np.interp(np.linspace(0, len(pcm) - 1, n), np.arange(len(pcm)), pcm).astype(np.float32)
-    buf = io.BytesIO()
-    sf.write(buf, audio, 48000, format="OGG", subtype="OPUS")
-    return buf.getvalue()
+    return _ogg(pcm, chunks[0].sample_rate)
+
+
+def _remote(words: str) -> bytes:
+    """AI-tjänstens röst (Gemini via LiteLLM) – uttalar svenska mycket bättre än Piper."""
+    import soundfile as sf
+
+    from . import ai
+    pcm, rate = sf.read(io.BytesIO(ai.synthesize(words)), dtype="float32")
+    if pcm.ndim > 1:
+        pcm = pcm.mean(axis=1)
+    if not len(pcm):
+        raise RuntimeError("Röstmodellen gav tomt ljud.")
+    return _ogg(pcm, rate)
+
+
+def speak(text: str, lang: str | None = None) -> bytes:
+    """Returnerar ett röstmeddelande (Ogg/Opus). Provar AI-tjänstens röst först, Piper lokalt som reserv."""
+    from . import i18n
+    lang = lang if lang in VOICES else (i18n.server_lang() if i18n.server_lang() in VOICES else "sv")
+    words = speakable(text)
+    if not words:
+        raise ValueError("Inget att läsa upp.")
+    try:
+        return _remote(words)
+    except Exception as e:  # noqa: BLE001 – kvoten slut, nätet nere …: läs upp lokalt i stället
+        print(f"speech: AI-rösten gick inte ({type(e).__name__}: {str(e)[:120]}) – använder Piper")
+    return _piper(words, lang)
